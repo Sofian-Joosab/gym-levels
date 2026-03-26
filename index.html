@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover"/>
+<meta name="theme-color" content="#0a0c10"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+<meta name="apple-mobile-web-app-title" content="Gym Levels"/>
+<link rel="manifest" href="manifest.json"/>
+<link rel="apple-touch-icon" href="icons/icon-192.png"/>
+<link rel="icon" href="icons/icon-192.png"/>
+<title>Gym Levels</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body,#root{height:100%;width:100%;overflow-x:hidden}
+body{background:#0a0c10;font-family:'DM Sans','Segoe UI',sans-serif;color:#fff;-webkit-font-smoothing:antialiased}
+input::-webkit-outer-spin-button,input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+input[type=number]{-moz-appearance:textfield}
+::-webkit-scrollbar{display:none}
+@keyframes fadeIn{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
+@keyframes levelUp{0%{transform:scale(1)}50%{transform:scale(1.15)}100%{transform:scale(1)}}
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+<script type="text/babel" data-type="module">
+const {useState, useEffect, useCallback, useRef} = React;
+
+// ─── Storage via localStorage ───
+const LS = {
+  get(key) { try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : null; } catch { return null; } },
+  set(key, val) { try { localStorage.setItem(key, JSON.stringify(val)); } catch(e) { console.error(e); } },
+};
+
+// ─── Game Config ───
+const XP_PER_LEVEL = [0,100,250,450,700,1000,1400,1900,2500,3200,4000,5000,6200,7600,9200,11000,13000,15500,18500,22000,26000,30500,35500,41000,47000,54000,62000,71000,81000,92000,104000,117000,131000,146000,163000,182000,203000,226000,251000,278000,308000,340000,375000,413000,454000,498000,546000,598000,654000,715000];
+
+const TITLES = [
+  "Rookie","Trainee","Iron Initiate","Gym Rat","Plate Pusher","Rep Machine",
+  "Iron Disciple","Steel Warrior","Barbell Knight","Hypertrophy Hero",
+  "Muscle Mage","Titan Apprentice","Power Paladin","Beast Mode","Iron Legend",
+  "Mythic Lifter","Olympian","Demigod","Titan","Immortal"
+];
+
+const STATS = ["STR","END","VIT","PWR","AGI","FOR"];
+const STAT_NAMES = {STR:"Strength",END:"Endurance",VIT:"Vitality",PWR:"Power",AGI:"Agility",FOR:"Fortitude"};
+const STAT_COLORS = {STR:"#ff4d4d",END:"#4dff91",VIT:"#4dc8ff",PWR:"#ffb84d",AGI:"#c84dff",FOR:"#ff4da6"};
+
+const PROGRAM = {
+  "Day 1 — Push Power": [
+    {name:"Barbell Bench Press",sets:4,reps:"5-6",muscle:"Chest",xpMult:3},
+    {name:"Overhead Press",sets:4,reps:"6-8",muscle:"Shoulders",xpMult:2.5},
+    {name:"Incline Dumbbell Press",sets:3,reps:"8-10",muscle:"Upper Chest",xpMult:2},
+    {name:"Lateral Raises",sets:4,reps:"12-15",muscle:"Side Delts",xpMult:1.5},
+    {name:"Tricep Dips",sets:3,reps:"8-12",muscle:"Triceps",xpMult:2},
+    {name:"Overhead Tricep Extension",sets:3,reps:"10-12",muscle:"Triceps",xpMult:1.5},
+  ],
+  "Day 2 — Pull Power": [
+    {name:"Barbell Rows",sets:4,reps:"5-6",muscle:"Back",xpMult:3},
+    {name:"Weighted Pull-ups",sets:4,reps:"6-8",muscle:"Lats",xpMult:2.5},
+    {name:"Seated Cable Rows",sets:3,reps:"8-10",muscle:"Mid Back",xpMult:2},
+    {name:"Face Pulls",sets:4,reps:"15-20",muscle:"Rear Delts",xpMult:1.5},
+    {name:"Barbell Curls",sets:3,reps:"8-10",muscle:"Biceps",xpMult:1.5},
+    {name:"Hammer Curls",sets:3,reps:"10-12",muscle:"Brachialis",xpMult:1.5},
+  ],
+  "Day 3 — Legs & Core": [
+    {name:"Barbell Squats",sets:4,reps:"5-6",muscle:"Quads",xpMult:3.5},
+    {name:"Romanian Deadlift",sets:4,reps:"6-8",muscle:"Hamstrings",xpMult:3},
+    {name:"Leg Press",sets:3,reps:"8-12",muscle:"Quads",xpMult:2},
+    {name:"Walking Lunges",sets:3,reps:"10/leg",muscle:"Glutes",xpMult:2},
+    {name:"Calf Raises",sets:4,reps:"12-15",muscle:"Calves",xpMult:1.5},
+    {name:"Hanging Leg Raises",sets:3,reps:"12-15",muscle:"Core",xpMult:1.5},
+  ],
+  "Day 4 — Upper Hypertrophy": [
+    {name:"Dumbbell Bench Press",sets:4,reps:"8-10",muscle:"Chest",xpMult:2},
+    {name:"Cable Flyes",sets:3,reps:"12-15",muscle:"Chest",xpMult:1.5},
+    {name:"Lat Pulldown",sets:4,reps:"8-10",muscle:"Lats",xpMult:2},
+    {name:"Arnold Press",sets:3,reps:"10-12",muscle:"Shoulders",xpMult:2},
+    {name:"Superset: Curls + Pushdowns",sets:3,reps:"12-15",muscle:"Arms",xpMult:1.5},
+    {name:"Shrugs",sets:3,reps:"12-15",muscle:"Traps",xpMult:1.5},
+  ],
+};
+
+const MEAL_PLAN = {
+  target: "~3,000 kcal · 180g protein · 350g carbs · 95g fat",
+  meals: [
+    {name:"Breakfast — The Foundation",time:"7:30 AM",items:["4 whole eggs scrambled with cheese","2 slices sourdough toast with butter","1 banana","Glass of whole milk"],macros:"~650 kcal · 38g P",icon:"🍳"},
+    {name:"Snack — Mid-Morning Fuel",time:"10:00 AM",items:["Greek yogurt (200g) with honey & granola","Handful of almonds"],macros:"~350 kcal · 22g P",icon:"🥜"},
+    {name:"Lunch — The Builder",time:"1:00 PM",items:["250g grilled chicken thighs","Large portion of rice (200g dry)","Mixed salad with olive oil dressing","Side of avocado"],macros:"~750 kcal · 52g P",icon:"🍗"},
+    {name:"Pre-Workout — Power Up",time:"4:00 PM",items:["200g lean ground beef patty in a wrap","1 apple or banana","Coffee or pre-workout"],macros:"~450 kcal · 32g P",icon:"⚡"},
+    {name:"Dinner — The Feast",time:"7:30 PM",items:["300g ribeye steak OR salmon fillet","Sweet potato (large, baked)","Steamed broccoli & green beans","Drizzle of olive oil"],macros:"~700 kcal · 48g P",icon:"🥩"},
+    {name:"Before Bed — Recovery",time:"9:30 PM",items:["Casein shake or cottage cheese (200g)","1 tbsp peanut butter","Handful of berries"],macros:"~300 kcal · 30g P",icon:"🌙"},
+  ]
+};
+
+// ─── Helpers ───
+const getLevel = (xp) => { for (let i = XP_PER_LEVEL.length - 1; i >= 0; i--) { if (xp >= XP_PER_LEVEL[i]) return i; } return 0; };
+const getTitle = (level) => TITLES[Math.min(Math.floor(level / 2.5), TITLES.length - 1)];
+const calcXP = (weight, reps, sets, mult) => Math.round(weight * reps * sets * mult * 0.05);
+
+const DEFAULT_STATE = {
+  xp: 0, stats: {STR:1,END:1,VIT:1,PWR:1,AGI:1,FOR:1},
+  workoutLog: [], streakDays: 0, lastWorkout: null,
+  totalWorkouts: 0, totalWeightLifted: 0, bestDay: 0,
+  achievements: [], name: "Sofian",
+};
+
+const ACHIEVEMENTS = [
+  {id:"first",name:"First Rep",desc:"Complete your first workout",icon:"⚔️",check:s=>s.totalWorkouts>=1},
+  {id:"ten",name:"Dedicated",desc:"Complete 10 workouts",icon:"🔥",check:s=>s.totalWorkouts>=10},
+  {id:"fifty",name:"Iron Will",desc:"Complete 50 workouts",icon:"💎",check:s=>s.totalWorkouts>=50},
+  {id:"ton",name:"Ton Club",desc:"Lift 1,000kg total",icon:"🏋️",check:s=>s.totalWeightLifted>=1000},
+  {id:"10ton",name:"Monster",desc:"Lift 10,000kg total",icon:"👹",check:s=>s.totalWeightLifted>=10000},
+  {id:"streak7",name:"On Fire",desc:"7 day streak",icon:"🔥",check:s=>s.streakDays>=7},
+  {id:"lvl10",name:"Double Digits",desc:"Reach level 10",icon:"⭐",check:s=>getLevel(s.xp)>=10},
+  {id:"lvl25",name:"Elite",desc:"Reach level 25",icon:"👑",check:s=>getLevel(s.xp)>=25},
+];
+
+// ─── Components ───
+
+function XPBar({xp}) {
+  const level = getLevel(xp);
+  const cur = XP_PER_LEVEL[level] || 0;
+  const next = XP_PER_LEVEL[level + 1] || XP_PER_LEVEL[XP_PER_LEVEL.length - 1];
+  const pct = ((xp - cur) / (next - cur)) * 100;
+  return (
+    <div style={{width:"100%"}}>
+      <div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"#8a8f98",marginBottom:4,fontFamily:"'JetBrains Mono',monospace"}}>
+        <span>LVL {level}</span>
+        <span>{xp - cur} / {next - cur} XP</span>
+      </div>
+      <div style={{width:"100%",height:10,background:"#1a1d24",borderRadius:5,overflow:"hidden",border:"1px solid #2a2d35"}}>
+        <div style={{width:`${Math.min(pct,100)}%`,height:"100%",background:"linear-gradient(90deg, #f59e0b, #ef4444, #ec4899)",borderRadius:5,transition:"width 0.8s cubic-bezier(.4,0,.2,1)",boxShadow:"0 0 12px rgba(245,158,11,0.4)"}}/>
+      </div>
+    </div>
+  );
+}
+
+function StatHex({stat,value,max=50}) {
+  const pct = Math.min(value/max*100, 100);
+  return (
+    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+      <span style={{width:32,fontSize:11,fontWeight:700,color:STAT_COLORS[stat],fontFamily:"'JetBrains Mono',monospace"}}>{stat}</span>
+      <div style={{flex:1,height:6,background:"#1a1d24",borderRadius:3,overflow:"hidden"}}>
+        <div style={{width:`${pct}%`,height:"100%",background:STAT_COLORS[stat],borderRadius:3,transition:"width 0.5s ease",boxShadow:`0 0 8px ${STAT_COLORS[stat]}44`}}/>
+      </div>
+      <span style={{width:24,textAlign:"right",fontSize:12,color:"#ccc",fontFamily:"'JetBrains Mono',monospace"}}>{value}</span>
+    </div>
+  );
+}
+
+function TabBar({active,setActive}) {
+  const tabs = [{id:"profile",icon:"👤",label:"Profile"},{id:"workout",icon:"🏋️",label:"Train"},{id:"meals",icon:"🍖",label:"Meals"},{id:"log",icon:"📊",label:"Log"}];
+  return (
+    <div style={{display:"flex",position:"fixed",bottom:0,left:0,right:0,background:"linear-gradient(180deg, #0d0f13 0%, #0a0c10 100%)",borderTop:"1px solid #1f2229",zIndex:100,padding:"6px 0 env(safe-area-inset-bottom, 8px)"}}>
+      {tabs.map(t => (
+        <button key={t.id} onClick={()=>setActive(t.id)} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:2,background:"none",border:"none",cursor:"pointer",padding:"6px 0",color:active===t.id?"#f59e0b":"#555",transition:"all 0.2s",transform:active===t.id?"scale(1.05)":"scale(1)"}}>
+          <span style={{fontSize:20}}>{t.icon}</span>
+          <span style={{fontSize:10,fontWeight:600,letterSpacing:0.5,fontFamily:"'JetBrains Mono',monospace"}}>{t.label}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function ProfileTab({state}) {
+  const level = getLevel(state.xp);
+  const title = getTitle(level);
+  return (
+    <div style={{padding:"20px 16px 100px"}}>
+      <div style={{background:"linear-gradient(135deg, #13151a 0%, #1a1025 50%, #0f1318 100%)",borderRadius:16,padding:24,marginBottom:16,border:"1px solid #2a2040",position:"relative",overflow:"hidden"}}>
+        <div style={{position:"absolute",top:0,right:0,width:200,height:200,background:"radial-gradient(circle, #f59e0b08 0%, transparent 70%)"}}/>
+        <div style={{display:"flex",gap:16,alignItems:"center",marginBottom:20}}>
+          <div style={{width:72,height:72,borderRadius:16,background:"linear-gradient(135deg, #f59e0b, #ef4444)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:36,boxShadow:"0 4px 24px rgba(245,158,11,0.3)"}}>
+            {level < 10 ? "⚔️" : level < 25 ? "🛡️" : "👑"}
+          </div>
+          <div>
+            <div style={{fontSize:22,fontWeight:800,color:"#fff",letterSpacing:-0.5}}>{state.name}</div>
+            <div style={{fontSize:13,color:"#f59e0b",fontWeight:600,fontFamily:"'JetBrains Mono',monospace"}}>{title}</div>
+            <div style={{fontSize:11,color:"#666",marginTop:2,fontFamily:"'JetBrains Mono',monospace"}}>186cm · {level < 5 ? "67" : level < 15 ? "72" : "76"}kg target</div>
+          </div>
+        </div>
+        <XPBar xp={state.xp}/>
+      </div>
+
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:16}}>
+        {[
+          {label:"Workouts",value:state.totalWorkouts,icon:"💪"},
+          {label:"Streak",value:`${state.streakDays}d`,icon:"🔥"},
+          {label:"Weight",value:`${(state.totalWeightLifted/1000).toFixed(1)}t`,icon:"🏋️"},
+        ].map(s => (
+          <div key={s.label} style={{background:"#13151a",borderRadius:12,padding:"14px 10px",textAlign:"center",border:"1px solid #1f2229"}}>
+            <div style={{fontSize:20,marginBottom:4}}>{s.icon}</div>
+            <div style={{fontSize:18,fontWeight:800,color:"#fff"}}>{s.value}</div>
+            <div style={{fontSize:10,color:"#666",fontFamily:"'JetBrains Mono',monospace",marginTop:2}}>{s.label}</div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{background:"#13151a",borderRadius:14,padding:20,marginBottom:16,border:"1px solid #1f2229"}}>
+        <div style={{fontSize:14,fontWeight:700,color:"#fff",marginBottom:14,display:"flex",alignItems:"center",gap:8}}>
+          <span style={{fontSize:16}}>⚡</span> Attributes
+        </div>
+        {STATS.map(s => <StatHex key={s} stat={s} value={state.stats[s]}/>)}
+      </div>
+
+      <div style={{background:"#13151a",borderRadius:14,padding:20,border:"1px solid #1f2229"}}>
+        <div style={{fontSize:14,fontWeight:700,color:"#fff",marginBottom:14,display:"flex",alignItems:"center",gap:8}}>
+          <span style={{fontSize:16}}>🏆</span> Achievements
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+          {ACHIEVEMENTS.map(a => {
+            const unlocked = state.achievements.includes(a.id);
+            return (
+              <div key={a.id} style={{padding:"12px 10px",borderRadius:10,background:unlocked?"#1a1a10":"#0d0f13",border:`1px solid ${unlocked?"#f59e0b33":"#1a1d24"}`,opacity:unlocked?1:0.4,transition:"all 0.3s"}}>
+                <div style={{fontSize:22,marginBottom:4}}>{a.icon}</div>
+                <div style={{fontSize:11,fontWeight:700,color:unlocked?"#f59e0b":"#555"}}>{a.name}</div>
+                <div style={{fontSize:9,color:"#666",marginTop:2}}>{a.desc}</div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function WorkoutTab({state,setState}) {
+  const days = Object.keys(PROGRAM);
+  const [selectedDay, setSelectedDay] = useState(days[0]);
+  const [weights, setWeights] = useState({});
+  const [completed, setCompleted] = useState({});
+  const [showResult, setShowResult] = useState(null);
+
+  const exercises = PROGRAM[selectedDay];
+
+  const toggleSet = (exIdx, setIdx) => {
+    const key = `${exIdx}-${setIdx}`;
+    setCompleted(p => ({...p, [key]: !p[key]}));
+    // Haptic feedback
+    if (navigator.vibrate) navigator.vibrate(30);
+  };
+
+  const finishWorkout = () => {
+    let totalXP = 0;
+    let totalWeight = 0;
+    let statGains = {STR:0,END:0,VIT:0,PWR:0,AGI:0,FOR:0};
+
+    exercises.forEach((ex, exIdx) => {
+      const w = parseFloat(weights[exIdx]) || 0;
+      let completedSets = 0;
+      for (let s = 0; s < ex.sets; s++) {
+        if (completed[`${exIdx}-${s}`]) completedSets++;
+      }
+      const reps = parseInt(ex.reps) || 10;
+      const xp = calcXP(w, reps, completedSets, ex.xpMult);
+      totalXP += xp;
+      totalWeight += w * reps * completedSets;
+
+      if (ex.muscle.includes("Chest") || ex.muscle.includes("Back") || ex.muscle.includes("Shoulders")) statGains.STR += Math.ceil(completedSets * 0.3);
+      if (ex.muscle.includes("Quad") || ex.muscle.includes("Ham") || ex.muscle.includes("Glute")) statGains.PWR += Math.ceil(completedSets * 0.3);
+      if (ex.muscle.includes("Core")) statGains.VIT += Math.ceil(completedSets * 0.2);
+      statGains.END += Math.ceil(completedSets * 0.1);
+      statGains.FOR += Math.ceil(completedSets * 0.1);
+      if (ex.muscle.includes("Arms") || ex.muscle.includes("Bic") || ex.muscle.includes("Tri")) statGains.AGI += Math.ceil(completedSets * 0.2);
+    });
+
+    const bonusXP = Math.round(totalXP * 0.1);
+    totalXP += bonusXP;
+
+    const newState = {...state};
+    newState.xp += totalXP;
+    newState.totalWorkouts += 1;
+    newState.totalWeightLifted += totalWeight;
+    if (totalXP > newState.bestDay) newState.bestDay = totalXP;
+    
+    const today = new Date().toDateString();
+    const lastDate = newState.lastWorkout ? new Date(newState.lastWorkout).toDateString() : null;
+    const yesterday = new Date(Date.now() - 86400000).toDateString();
+    if (lastDate === yesterday || lastDate === today) {
+      if (lastDate !== today) newState.streakDays += 1;
+    } else {
+      newState.streakDays = 1;
+    }
+    newState.lastWorkout = new Date().toISOString();
+
+    Object.keys(statGains).forEach(s => {
+      newState.stats[s] = Math.min(50, (newState.stats[s] || 1) + statGains[s]);
+    });
+
+    ACHIEVEMENTS.forEach(a => {
+      if (!newState.achievements.includes(a.id) && a.check(newState)) {
+        newState.achievements.push(a.id);
+      }
+    });
+
+    newState.workoutLog = [...(newState.workoutLog || []), {
+      date: new Date().toISOString(), day: selectedDay, xp: totalXP, weight: totalWeight,
+    }].slice(-50);
+
+    setState(newState);
+    setShowResult({xp:totalXP, bonus:bonusXP, stats:statGains, weight:totalWeight, prevLevel:getLevel(state.xp), newLevel:getLevel(newState.xp)});
+    setCompleted({});
+    if (navigator.vibrate) navigator.vibrate([50, 50, 100]);
+  };
+
+  if (showResult) {
+    const leveledUp = showResult.newLevel > showResult.prevLevel;
+    return (
+      <div style={{padding:"40px 16px 100px",textAlign:"center"}}>
+        <div style={{background:"linear-gradient(135deg, #1a1025, #13151a)",borderRadius:20,padding:32,border:"1px solid #2a2040",animation:"fadeIn 0.5s ease"}}>
+          <div style={{fontSize:48,marginBottom:8,animation:leveledUp?"levelUp 0.6s ease":"none"}}>{leveledUp ? "🎉" : "⚔️"}</div>
+          <div style={{fontSize:24,fontWeight:800,color:"#fff",marginBottom:4}}>
+            {leveledUp ? "LEVEL UP!" : "Workout Complete!"}
+          </div>
+          {leveledUp && <div style={{fontSize:16,color:"#f59e0b",fontWeight:700,marginBottom:12}}>Level {showResult.newLevel} — {getTitle(showResult.newLevel)}</div>}
+          
+          <div style={{display:"inline-block",padding:"8px 24px",borderRadius:20,background:"linear-gradient(90deg, #f59e0b22, #ef444422)",border:"1px solid #f59e0b44",marginBottom:20}}>
+            <span style={{fontSize:28,fontWeight:800,color:"#f59e0b",fontFamily:"'JetBrains Mono',monospace"}}>+{showResult.xp} XP</span>
+          </div>
+
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:20}}>
+            <div style={{background:"#0d0f13",borderRadius:10,padding:12}}>
+              <div style={{fontSize:10,color:"#666"}}>Weight Moved</div>
+              <div style={{fontSize:16,fontWeight:700,color:"#fff"}}>{showResult.weight.toLocaleString()} kg</div>
+            </div>
+            <div style={{background:"#0d0f13",borderRadius:10,padding:12}}>
+              <div style={{fontSize:10,color:"#666"}}>Bonus XP</div>
+              <div style={{fontSize:16,fontWeight:700,color:"#4dff91"}}>+{showResult.bonus}</div>
+            </div>
+          </div>
+
+          <div style={{textAlign:"left",marginBottom:20}}>
+            <div style={{fontSize:12,fontWeight:600,color:"#888",marginBottom:8}}>STAT GAINS</div>
+            {Object.entries(showResult.stats).filter(([,v])=>v>0).map(([s,v]) => (
+              <div key={s} style={{display:"flex",justifyContent:"space-between",marginBottom:4,padding:"4px 8px",borderRadius:6,background:"#0d0f13"}}>
+                <span style={{fontSize:12,color:STAT_COLORS[s],fontWeight:700}}>{STAT_NAMES[s]}</span>
+                <span style={{fontSize:12,color:"#4dff91",fontWeight:700}}>+{v}</span>
+              </div>
+            ))}
+          </div>
+
+          <button onClick={()=>setShowResult(null)} style={{width:"100%",padding:"14px",borderRadius:12,border:"none",background:"linear-gradient(90deg, #f59e0b, #ef4444)",color:"#fff",fontWeight:800,fontSize:15,cursor:"pointer",letterSpacing:0.5}}>
+            CONTINUE
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{padding:"16px 16px 100px"}}>
+      <div style={{fontSize:18,fontWeight:800,color:"#fff",marginBottom:12}}>🏋️ Training</div>
+      
+      <div style={{display:"flex",gap:6,marginBottom:16,overflowX:"auto",paddingBottom:4}}>
+        {days.map((d,i) => (
+          <button key={d} onClick={()=>{setSelectedDay(d);setCompleted({});}} style={{padding:"8px 14px",borderRadius:10,border:"none",cursor:"pointer",whiteSpace:"nowrap",background:selectedDay===d?"linear-gradient(90deg,#f59e0b,#ef4444)":"#13151a",color:selectedDay===d?"#fff":"#888",fontWeight:700,fontSize:11,fontFamily:"'JetBrains Mono',monospace"}}>
+            D{i+1}
+          </button>
+        ))}
+      </div>
+
+      <div style={{fontSize:14,fontWeight:700,color:"#f59e0b",marginBottom:14}}>{selectedDay}</div>
+
+      {exercises.map((ex, exIdx) => (
+        <div key={exIdx} style={{background:"#13151a",borderRadius:14,padding:16,marginBottom:10,border:"1px solid #1f2229"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+            <div>
+              <div style={{fontSize:13,fontWeight:700,color:"#fff"}}>{ex.name}</div>
+              <div style={{fontSize:10,color:"#666",fontFamily:"'JetBrains Mono',monospace"}}>{ex.muscle} · {ex.sets}×{ex.reps}</div>
+            </div>
+            <div style={{fontSize:9,color:"#f59e0b",fontFamily:"'JetBrains Mono',monospace",background:"#f59e0b15",padding:"3px 8px",borderRadius:6}}>×{ex.xpMult} XP</div>
+          </div>
+          
+          <div style={{display:"flex",alignItems:"center",gap:8}}>
+            <input
+              type="number"
+              inputMode="decimal"
+              placeholder="kg"
+              value={weights[exIdx] || ""}
+              onChange={e => setWeights(p=>({...p,[exIdx]:e.target.value}))}
+              style={{width:64,padding:"8px 10px",borderRadius:8,border:"1px solid #2a2d35",background:"#0d0f13",color:"#fff",fontSize:14,fontWeight:700,fontFamily:"'JetBrains Mono',monospace",outline:"none"}}
+            />
+            <div style={{display:"flex",gap:4,flex:1,justifyContent:"flex-end"}}>
+              {Array.from({length:ex.sets}).map((_,sIdx) => {
+                const done = completed[`${exIdx}-${sIdx}`];
+                return (
+                  <button key={sIdx} onClick={()=>toggleSet(exIdx,sIdx)} style={{width:36,height:36,borderRadius:8,border:"none",cursor:"pointer",background:done?"linear-gradient(135deg,#f59e0b,#ef4444)":"#0d0f13",color:done?"#fff":"#444",fontWeight:800,fontSize:12,transition:"all 0.2s",transform:done?"scale(1.05)":"scale(1)",boxShadow:done?"0 2px 8px rgba(245,158,11,0.3)":"none"}}>
+                    {done ? "✓" : sIdx+1}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      ))}
+
+      <button onClick={finishWorkout} style={{width:"100%",padding:"16px",borderRadius:14,border:"none",marginTop:8,background:"linear-gradient(90deg, #f59e0b, #ef4444, #ec4899)",color:"#fff",fontWeight:800,fontSize:16,cursor:"pointer",letterSpacing:1,boxShadow:"0 4px 24px rgba(245,158,11,0.3)"}}>
+        ⚡ FINISH & GAIN XP
+      </button>
+    </div>
+  );
+}
+
+function MealsTab() {
+  const [expanded, setExpanded] = useState(null);
+  return (
+    <div style={{padding:"16px 16px 100px"}}>
+      <div style={{fontSize:18,fontWeight:800,color:"#fff",marginBottom:4}}>🍖 Meal Plan</div>
+      <div style={{fontSize:11,color:"#f59e0b",marginBottom:4,fontFamily:"'JetBrains Mono',monospace"}}>Bulk Mode — High Protein Carnivore</div>
+      <div style={{fontSize:10,color:"#666",marginBottom:16,fontFamily:"'JetBrains Mono',monospace"}}>{MEAL_PLAN.target}</div>
+
+      {MEAL_PLAN.meals.map((meal, i) => (
+        <div key={i} onClick={()=>setExpanded(expanded===i?null:i)} style={{background:"#13151a",borderRadius:14,padding:16,marginBottom:8,border:`1px solid ${expanded===i?"#f59e0b33":"#1f2229"}`,cursor:"pointer",transition:"all 0.2s"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <div style={{display:"flex",alignItems:"center",gap:10}}>
+              <span style={{fontSize:24}}>{meal.icon}</span>
+              <div>
+                <div style={{fontSize:13,fontWeight:700,color:"#fff"}}>{meal.name}</div>
+                <div style={{fontSize:10,color:"#666",fontFamily:"'JetBrains Mono',monospace"}}>{meal.time}</div>
+              </div>
+            </div>
+            <div style={{fontSize:10,color:"#f59e0b",fontFamily:"'JetBrains Mono',monospace"}}>{meal.macros}</div>
+          </div>
+          {expanded === i && (
+            <div style={{marginTop:12,paddingTop:12,borderTop:"1px solid #1f2229"}}>
+              {meal.items.map((item, j) => (
+                <div key={j} style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+                  <div style={{width:4,height:4,borderRadius:2,background:"#f59e0b"}}/>
+                  <span style={{fontSize:12,color:"#ccc"}}>{item}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      ))}
+
+      <div style={{background:"#13151a",borderRadius:14,padding:16,marginTop:8,border:"1px solid #1f2229"}}>
+        <div style={{fontSize:12,fontWeight:700,color:"#fff",marginBottom:8}}>💡 Bulking Tips</div>
+        {[
+          "Eat within 1hr of waking to kickstart muscle synthesis",
+          "Post-workout meal within 45 min — protein + fast carbs",
+          "Track weekly weight — aim for 0.3-0.5kg/week gain",
+          "If weight stalls, add 200 kcal (extra rice or peanut butter)",
+          "Hydrate: 3-4 liters/day minimum",
+          "Creatine monohydrate 5g daily is evidence-backed",
+        ].map((tip,i) => (
+          <div key={i} style={{fontSize:11,color:"#999",marginBottom:6,paddingLeft:12,borderLeft:"2px solid #f59e0b33"}}>{tip}</div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function LogTab({state}) {
+  const logs = [...(state.workoutLog || [])].reverse();
+  return (
+    <div style={{padding:"16px 16px 100px"}}>
+      <div style={{fontSize:18,fontWeight:800,color:"#fff",marginBottom:16}}>📊 Progress</div>
+      
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:16}}>
+        <div style={{background:"#13151a",borderRadius:12,padding:14,border:"1px solid #1f2229"}}>
+          <div style={{fontSize:10,color:"#666",fontFamily:"'JetBrains Mono',monospace"}}>Total XP</div>
+          <div style={{fontSize:20,fontWeight:800,color:"#f59e0b"}}>{state.xp.toLocaleString()}</div>
+        </div>
+        <div style={{background:"#13151a",borderRadius:12,padding:14,border:"1px solid #1f2229"}}>
+          <div style={{fontSize:10,color:"#666",fontFamily:"'JetBrains Mono',monospace"}}>Best Session</div>
+          <div style={{fontSize:20,fontWeight:800,color:"#4dff91"}}>{state.bestDay} XP</div>
+        </div>
+      </div>
+
+      <div style={{background:"#13151a",borderRadius:14,padding:16,marginBottom:16,border:"1px solid #1f2229"}}>
+        <div style={{fontSize:12,fontWeight:700,color:"#fff",marginBottom:12}}>Level Progress</div>
+        <div style={{display:"flex",gap:2,height:40,alignItems:"flex-end"}}>
+          {logs.slice(0,20).reverse().map((l,i) => {
+            const maxXP = Math.max(...logs.map(x=>x.xp), 1);
+            const h = Math.max((l.xp / maxXP) * 100, 8);
+            return (
+              <div key={i} style={{flex:1,height:`${h}%`,borderRadius:3,background:"linear-gradient(180deg, #f59e0b, #ef4444)",opacity:0.5 + (i/20)*0.5,minWidth:4}}/>
+            );
+          })}
+          {logs.length === 0 && <div style={{fontSize:11,color:"#444",padding:8}}>Complete workouts to see your progress chart</div>}
+        </div>
+      </div>
+
+      <div style={{fontSize:13,fontWeight:700,color:"#fff",marginBottom:10}}>Recent Sessions</div>
+      {logs.length === 0 && <div style={{color:"#444",fontSize:12,textAlign:"center",padding:32}}>No workouts logged yet — go train!</div>}
+      {logs.map((log,i) => (
+        <div key={i} style={{background:"#13151a",borderRadius:12,padding:14,marginBottom:6,border:"1px solid #1f2229",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <div>
+            <div style={{fontSize:12,fontWeight:600,color:"#ccc"}}>{log.day}</div>
+            <div style={{fontSize:10,color:"#555",fontFamily:"'JetBrains Mono',monospace"}}>{new Date(log.date).toLocaleDateString()}</div>
+          </div>
+          <div style={{textAlign:"right"}}>
+            <div style={{fontSize:14,fontWeight:800,color:"#f59e0b"}}>+{log.xp} XP</div>
+            <div style={{fontSize:10,color:"#555",fontFamily:"'JetBrains Mono',monospace"}}>{log.weight.toLocaleString()} kg</div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ─── Main App ───
+function GymLevels() {
+  const [state, setState] = useState(() => LS.get("gym-levels-state") || {...DEFAULT_STATE});
+  const [tab, setTab] = useState("profile");
+
+  const save = useCallback((newState) => {
+    setState(newState);
+    LS.set("gym-levels-state", newState);
+  }, []);
+
+  return (
+    <div style={{minHeight:"100vh",background:"#0a0c10",color:"#fff",fontFamily:"'DM Sans','Segoe UI',sans-serif",maxWidth:480,margin:"0 auto",position:"relative"}}>
+      {/* Header */}
+      <div style={{padding:"14px 16px",display:"flex",justifyContent:"space-between",alignItems:"center",borderBottom:"1px solid #1a1d24",position:"sticky",top:0,background:"#0a0c10ee",backdropFilter:"blur(12px)",zIndex:50}}>
+        <div style={{display:"flex",alignItems:"center",gap:8}}>
+          <span style={{fontSize:22}}>⚔️</span>
+          <span style={{fontSize:16,fontWeight:800,letterSpacing:-0.5,background:"linear-gradient(90deg,#f59e0b,#ef4444)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>GYM LEVELS</span>
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:6}}>
+          <span style={{fontSize:12,fontWeight:700,color:"#f59e0b",fontFamily:"'JetBrains Mono',monospace"}}>LVL {getLevel(state.xp)}</span>
+          <span style={{fontSize:11,color:"#555"}}>·</span>
+          <span style={{fontSize:12,color:"#888",fontFamily:"'JetBrains Mono',monospace"}}>{state.xp.toLocaleString()} XP</span>
+        </div>
+      </div>
+
+      {tab === "profile" && <ProfileTab state={state}/>}
+      {tab === "workout" && <WorkoutTab state={state} setState={save}/>}
+      {tab === "meals" && <MealsTab/>}
+      {tab === "log" && <LogTab state={state}/>}
+
+      <TabBar active={tab} setActive={setTab}/>
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<GymLevels/>);
+</script>
+
+<script>
+// Register Service Worker
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js')
+      .then(r => console.log('SW registered:', r.scope))
+      .catch(e => console.log('SW failed:', e));
+  });
+}
+</script>
+</body>
+</html>
