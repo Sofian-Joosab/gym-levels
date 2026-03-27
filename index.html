@@ -24,6 +24,8 @@ input[type=number]{-moz-appearance:textfield}
 @keyframes fadeIn{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
 @keyframes levelUp{0%{transform:scale(1)}50%{transform:scale(1.15)}100%{transform:scale(1)}}
+@keyframes slideUp{from{opacity:0;transform:translateY(100%)}to{opacity:1;transform:translateY(0)}}
+@keyframes fadeOverlay{from{opacity:0}to{opacity:1}}
 </style>
 </head>
 <body>
@@ -34,24 +36,78 @@ input[type=number]{-moz-appearance:textfield}
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
 <script type="text/babel" data-type="module">
-const {useState, useEffect, useCallback, useRef} = React;
+const {useState, useEffect, useCallback} = React;
 
-// ─── Storage via localStorage ───
 const LS = {
   get(key) { try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : null; } catch { return null; } },
   set(key, val) { try { localStorage.setItem(key, JSON.stringify(val)); } catch(e) { console.error(e); } },
 };
 
+// ─── Exercise SVG Icons ───
+const EX_ICONS = {
+  barbell: (c) => `<svg viewBox="0 0 60 40" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="8" y="10" width="8" height="20" rx="2" fill="${c}" opacity="0.8"/><rect x="2" y="13" width="8" height="14" rx="2" fill="${c}"/><rect x="44" y="10" width="8" height="20" rx="2" fill="${c}" opacity="0.8"/><rect x="50" y="13" width="8" height="14" rx="2" fill="${c}"/><rect x="14" y="18" width="32" height="4" rx="1" fill="${c}" opacity="0.6"/></svg>`,
+  dumbbell: (c) => `<svg viewBox="0 0 60 40" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="6" y="12" width="10" height="16" rx="3" fill="${c}"/><rect x="44" y="12" width="10" height="16" rx="3" fill="${c}"/><rect x="14" y="17" width="32" height="6" rx="2" fill="${c}" opacity="0.6"/></svg>`,
+  cable: (c) => `<svg viewBox="0 0 60 40" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="26" y="2" width="8" height="6" rx="1" fill="${c}" opacity="0.5"/><line x1="30" y1="8" x2="30" y2="28" stroke="${c}" stroke-width="2" stroke-dasharray="3 2"/><rect x="22" y="28" width="16" height="8" rx="3" fill="${c}"/></svg>`,
+  bodyweight: (c) => `<svg viewBox="0 0 60 40" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="30" cy="8" r="5" fill="${c}"/><line x1="30" y1="13" x2="30" y2="26" stroke="${c}" stroke-width="2.5" stroke-linecap="round"/><line x1="30" y1="17" x2="20" y2="24" stroke="${c}" stroke-width="2" stroke-linecap="round"/><line x1="30" y1="17" x2="40" y2="24" stroke="${c}" stroke-width="2" stroke-linecap="round"/><line x1="30" y1="26" x2="22" y2="36" stroke="${c}" stroke-width="2" stroke-linecap="round"/><line x1="30" y1="26" x2="38" y2="36" stroke="${c}" stroke-width="2" stroke-linecap="round"/></svg>`,
+  machine: (c) => `<svg viewBox="0 0 60 40" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="10" y="4" width="6" height="32" rx="1" fill="${c}" opacity="0.4"/><rect x="44" y="4" width="6" height="32" rx="1" fill="${c}" opacity="0.4"/><rect x="14" y="10" width="32" height="4" rx="1" fill="${c}" opacity="0.6"/><rect x="20" y="22" width="20" height="10" rx="3" fill="${c}"/></svg>`,
+  plate: (c) => `<svg viewBox="0 0 60 40" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="30" cy="20" r="14" fill="none" stroke="${c}" stroke-width="3"/><circle cx="30" cy="20" r="6" fill="${c}" opacity="0.5"/><circle cx="30" cy="20" r="2" fill="${c}"/></svg>`,
+};
+
+// ─── Full Exercise Database ───
+const EXERCISE_DB = {
+  "Barbell Bench Press": { icon:"barbell",color:"#ff4d4d",videoQuery:"barbell+bench+press+proper+form",tip:"Retract shoulder blades, arch back slightly, plant feet firm",
+    alts:[{name:"Dumbbell Bench Press",icon:"dumbbell",tip:"Greater range of motion"},{name:"Machine Chest Press",icon:"machine",tip:"No spotter needed"},{name:"Push-ups (Weighted)",icon:"bodyweight",tip:"Add plate on back"}]},
+  "Overhead Press": { icon:"barbell",color:"#ffb84d",videoQuery:"standing+overhead+press+form",tip:"Brace core, press straight up, avoid leaning back",
+    alts:[{name:"Seated Dumbbell Press",icon:"dumbbell",tip:"More stability"},{name:"Machine Shoulder Press",icon:"machine",tip:"Guided path"},{name:"Landmine Press",icon:"barbell",tip:"Shoulder-friendly angle"}]},
+  "Incline Dumbbell Press": { icon:"dumbbell",color:"#ff4d4d",videoQuery:"incline+dumbbell+press+form",tip:"30-45° angle, squeeze at top, control the negative",
+    alts:[{name:"Incline Barbell Press",icon:"barbell",tip:"Heavier loads"},{name:"Low-to-High Cable Fly",icon:"cable",tip:"Constant tension"},{name:"Incline Machine Press",icon:"machine",tip:"Great for burnouts"}]},
+  "Lateral Raises": { icon:"dumbbell",color:"#ffb84d",videoQuery:"lateral+raise+proper+form",tip:"Slight forward lean, lead with elbows, pinky up",
+    alts:[{name:"Cable Lateral Raise",icon:"cable",tip:"Better bottom stretch"},{name:"Machine Lateral Raise",icon:"machine",tip:"Easy to drop set"},{name:"Leaning Lateral Raise",icon:"dumbbell",tip:"Longer ROM"}]},
+  "Tricep Dips": { icon:"bodyweight",color:"#c84dff",videoQuery:"tricep+dips+form+tutorial",tip:"Stay upright for tricep focus, lean forward for chest",
+    alts:[{name:"Close Grip Bench Press",icon:"barbell",tip:"Heavy compound"},{name:"Tricep Pushdown",icon:"cable",tip:"Very versatile"},{name:"Bench Dips",icon:"bodyweight",tip:"Easier option"}]},
+  "Overhead Tricep Extension": { icon:"dumbbell",color:"#c84dff",videoQuery:"overhead+tricep+extension+dumbbell",tip:"Keep elbows tucked, full stretch at bottom",
+    alts:[{name:"Cable Overhead Extension",icon:"cable",tip:"Constant tension"},{name:"Skull Crushers",icon:"barbell",tip:"Great for mass"},{name:"Kickbacks",icon:"dumbbell",tip:"Peak contraction"}]},
+  "Barbell Rows": { icon:"barbell",color:"#4dc8ff",videoQuery:"barbell+bent+over+row+form",tip:"Hinge at hips, pull to lower chest, squeeze back",
+    alts:[{name:"Dumbbell Row",icon:"dumbbell",tip:"Great for imbalances"},{name:"T-Bar Row",icon:"barbell",tip:"Neutral grip, heavy"},{name:"Chest-Supported Row",icon:"machine",tip:"Zero lower back stress"}]},
+  "Weighted Pull-ups": { icon:"bodyweight",color:"#4dc8ff",videoQuery:"weighted+pull+ups+form",tip:"Full dead hang, pull elbows to hips, chin over bar",
+    alts:[{name:"Lat Pulldown",icon:"cable",tip:"Adjustable weight"},{name:"Assisted Pull-up Machine",icon:"machine",tip:"Build up strength"},{name:"Bodyweight Pull-ups",icon:"bodyweight",tip:"Drop weight, add reps"}]},
+  "Seated Cable Rows": { icon:"cable",color:"#4dc8ff",videoQuery:"seated+cable+row+form",tip:"Sit tall, pull to belly, full stretch forward",
+    alts:[{name:"Machine Row",icon:"machine",tip:"Fixed path"},{name:"Dumbbell Row",icon:"dumbbell",tip:"Free weight option"},{name:"Band Row",icon:"bodyweight",tip:"Light warm-up option"}]},
+  "Face Pulls": { icon:"cable",color:"#ffb84d",videoQuery:"face+pulls+rear+delts+form",tip:"High cable, pull to forehead, external rotate at end",
+    alts:[{name:"Reverse Pec Deck",icon:"machine",tip:"Machine isolation"},{name:"Bent-over Reverse Fly",icon:"dumbbell",tip:"Free weight option"},{name:"Band Pull-aparts",icon:"bodyweight",tip:"Do these daily"}]},
+  "Barbell Curls": { icon:"barbell",color:"#c84dff",videoQuery:"barbell+curl+strict+form",tip:"Pin elbows at sides, no swinging, squeeze at top",
+    alts:[{name:"EZ Bar Curls",icon:"barbell",tip:"Easier on wrists"},{name:"Cable Curls",icon:"cable",tip:"Constant tension"},{name:"Dumbbell Curls",icon:"dumbbell",tip:"Supinate at top"}]},
+  "Hammer Curls": { icon:"dumbbell",color:"#c84dff",videoQuery:"hammer+curl+form+brachialis",tip:"Neutral grip, focus on squeeze, slow negatives",
+    alts:[{name:"Cross-body Hammer Curl",icon:"dumbbell",tip:"More brachialis"},{name:"Rope Cable Curl",icon:"cable",tip:"Neutral + constant tension"},{name:"Reverse Curl",icon:"barbell",tip:"Forearm focus"}]},
+  "Barbell Squats": { icon:"barbell",color:"#ff4da6",videoQuery:"barbell+back+squat+form",tip:"Break at hips first, knees out, chest up, below parallel",
+    alts:[{name:"Goblet Squat",icon:"dumbbell",tip:"Great for form"},{name:"Hack Squat Machine",icon:"machine",tip:"Heavy quad focus"},{name:"Front Squat",icon:"barbell",tip:"More quad dominant"}]},
+  "Romanian Deadlift": { icon:"barbell",color:"#ff4da6",videoQuery:"romanian+deadlift+form",tip:"Soft knees, hinge at hips, bar stays close to legs",
+    alts:[{name:"Dumbbell RDL",icon:"dumbbell",tip:"Unilateral option"},{name:"Lying Leg Curl",icon:"machine",tip:"Hamstring isolation"},{name:"Good Mornings",icon:"barbell",tip:"Similar hinge pattern"}]},
+  "Leg Press": { icon:"machine",color:"#ff4da6",videoQuery:"leg+press+proper+form",tip:"Feet shoulder-width, don't lock knees, full depth",
+    alts:[{name:"Bulgarian Split Squat",icon:"dumbbell",tip:"Great for balance"},{name:"Smith Machine Squat",icon:"machine",tip:"Guided squat"},{name:"Goblet Squat",icon:"dumbbell",tip:"Free weight quad builder"}]},
+  "Walking Lunges": { icon:"dumbbell",color:"#ff4da6",videoQuery:"walking+lunges+dumbbell+form",tip:"Long steps for glutes, short steps for quads",
+    alts:[{name:"Reverse Lunges",icon:"dumbbell",tip:"Easier on knees"},{name:"Step-ups",icon:"bodyweight",tip:"Adjustable height"},{name:"Leg Extension",icon:"machine",tip:"Quad isolation finisher"}]},
+  "Calf Raises": { icon:"machine",color:"#ff4da6",videoQuery:"calf+raises+proper+form",tip:"Full stretch at bottom, 2-sec pause at top",
+    alts:[{name:"Seated Calf Raise",icon:"machine",tip:"Targets soleus"},{name:"Smith Machine Calf Raise",icon:"machine",tip:"Standing + stability"},{name:"Single Leg Calf Raise",icon:"bodyweight",tip:"Bodyweight, add hold"}]},
+  "Hanging Leg Raises": { icon:"bodyweight",color:"#4dff91",videoQuery:"hanging+leg+raise+form",tip:"Avoid swinging, curl pelvis up, slow negatives",
+    alts:[{name:"Captain's Chair Leg Raise",icon:"machine",tip:"More stable"},{name:"Cable Crunch",icon:"cable",tip:"Weighted core"},{name:"Ab Wheel Rollout",icon:"bodyweight",tip:"Anti-extension builder"}]},
+  "Dumbbell Bench Press": { icon:"dumbbell",color:"#ff4d4d",videoQuery:"dumbbell+bench+press+form",tip:"Arc the dumbbells together, deep stretch at bottom",
+    alts:[{name:"Barbell Bench Press",icon:"barbell",tip:"Heavier loads"},{name:"Machine Chest Press",icon:"machine",tip:"No spotter needed"},{name:"Floor Press",icon:"dumbbell",tip:"Tricep focus"}]},
+  "Cable Flyes": { icon:"cable",color:"#ff4d4d",videoQuery:"cable+fly+chest+form",tip:"Slight elbow bend, squeeze hard at center",
+    alts:[{name:"Pec Deck Machine",icon:"machine",tip:"Fixed path"},{name:"Dumbbell Flyes",icon:"dumbbell",tip:"Deep stretch"},{name:"Svend Press",icon:"plate",tip:"Constant squeeze finisher"}]},
+  "Lat Pulldown": { icon:"cable",color:"#4dc8ff",videoQuery:"lat+pulldown+form+wide+grip",tip:"Lean back slightly, pull to upper chest, squeeze lats",
+    alts:[{name:"Pull-ups",icon:"bodyweight",tip:"King of back exercises"},{name:"Straight Arm Pulldown",icon:"cable",tip:"Lat isolation"},{name:"Machine Pulldown",icon:"machine",tip:"Plate-loaded option"}]},
+  "Arnold Press": { icon:"dumbbell",color:"#ffb84d",videoQuery:"arnold+press+form+shoulders",tip:"Start palms facing you, rotate as you press up",
+    alts:[{name:"Seated Dumbbell Press",icon:"dumbbell",tip:"Standard pressing"},{name:"Machine Shoulder Press",icon:"machine",tip:"Heavier loads"},{name:"Landmine Press",icon:"barbell",tip:"Shoulder-friendly"}]},
+  "Superset: Curls + Pushdowns": { icon:"cable",color:"#c84dff",videoQuery:"bicep+curl+tricep+pushdown+superset",tip:"No rest between exercises, rest after both done",
+    alts:[{name:"DB Curl + Kickback",icon:"dumbbell",tip:"Free weight superset"},{name:"Hammer Curl + Dips",icon:"bodyweight",tip:"Mixed equipment"},{name:"Preacher Curl + Skull Crusher",icon:"barbell",tip:"Barbell arm superset"}]},
+  "Shrugs": { icon:"dumbbell",color:"#4dc8ff",videoQuery:"dumbbell+shrugs+trap+form",tip:"Pull ears to shoulders, 1-sec hold at top",
+    alts:[{name:"Barbell Shrugs",icon:"barbell",tip:"Heavier loading"},{name:"Cable Shrugs",icon:"cable",tip:"Constant tension"},{name:"Farmer's Walk",icon:"dumbbell",tip:"Traps + grip + core"}]},
+};
+
 // ─── Game Config ───
 const XP_PER_LEVEL = [0,100,250,450,700,1000,1400,1900,2500,3200,4000,5000,6200,7600,9200,11000,13000,15500,18500,22000,26000,30500,35500,41000,47000,54000,62000,71000,81000,92000,104000,117000,131000,146000,163000,182000,203000,226000,251000,278000,308000,340000,375000,413000,454000,498000,546000,598000,654000,715000];
-
-const TITLES = [
-  "Rookie","Trainee","Iron Initiate","Gym Rat","Plate Pusher","Rep Machine",
-  "Iron Disciple","Steel Warrior","Barbell Knight","Hypertrophy Hero",
-  "Muscle Mage","Titan Apprentice","Power Paladin","Beast Mode","Iron Legend",
-  "Mythic Lifter","Olympian","Demigod","Titan","Immortal"
-];
-
+const TITLES = ["Rookie","Trainee","Iron Initiate","Gym Rat","Plate Pusher","Rep Machine","Iron Disciple","Steel Warrior","Barbell Knight","Hypertrophy Hero","Muscle Mage","Titan Apprentice","Power Paladin","Beast Mode","Iron Legend","Mythic Lifter","Olympian","Demigod","Titan","Immortal"];
 const STATS = ["STR","END","VIT","PWR","AGI","FOR"];
 const STAT_NAMES = {STR:"Strength",END:"Endurance",VIT:"Vitality",PWR:"Power",AGI:"Agility",FOR:"Fortitude"};
 const STAT_COLORS = {STR:"#ff4d4d",END:"#4dff91",VIT:"#4dc8ff",PWR:"#ffb84d",AGI:"#c84dff",FOR:"#ff4da6"};
@@ -94,26 +150,21 @@ const PROGRAM = {
 const MEAL_PLAN = {
   target: "~3,000 kcal · 180g protein · 350g carbs · 95g fat",
   meals: [
-    {name:"Breakfast — The Foundation",time:"7:30 AM",items:["4 whole eggs scrambled with cheese","2 slices sourdough toast with butter","1 banana","Glass of whole milk"],macros:"~650 kcal · 38g P",icon:"🍳"},
-    {name:"Snack — Mid-Morning Fuel",time:"10:00 AM",items:["Greek yogurt (200g) with honey & granola","Handful of almonds"],macros:"~350 kcal · 22g P",icon:"🥜"},
-    {name:"Lunch — The Builder",time:"1:00 PM",items:["250g grilled chicken thighs","Large portion of rice (200g dry)","Mixed salad with olive oil dressing","Side of avocado"],macros:"~750 kcal · 52g P",icon:"🍗"},
-    {name:"Pre-Workout — Power Up",time:"4:00 PM",items:["200g lean ground beef patty in a wrap","1 apple or banana","Coffee or pre-workout"],macros:"~450 kcal · 32g P",icon:"⚡"},
-    {name:"Dinner — The Feast",time:"7:30 PM",items:["300g ribeye steak OR salmon fillet","Sweet potato (large, baked)","Steamed broccoli & green beans","Drizzle of olive oil"],macros:"~700 kcal · 48g P",icon:"🥩"},
-    {name:"Before Bed — Recovery",time:"9:30 PM",items:["Casein shake or cottage cheese (200g)","1 tbsp peanut butter","Handful of berries"],macros:"~300 kcal · 30g P",icon:"🌙"},
+    {name:"Pre-Workout — Quick Fuel",time:"5:00 AM",items:["1 banana","1 tbsp peanut butter","Black coffee or pre-workout","Optional: handful of dry oats"],macros:"~250 kcal · 8g P",icon:"⚡",note:"Eat 20-30 min before training — fast-digesting, just enough energy"},
+    {name:"Post-Workout — The Rebuild",time:"7:00 AM",items:["4 whole eggs scrambled with cheese","2 slices sourdough toast with butter","1 glass whole milk","1 banana or berries"],macros:"~700 kcal · 42g P",icon:"🍳",note:"Critical window — eat within 45 min post-training for recovery"},
+    {name:"Mid-Morning — Keep Building",time:"10:00 AM",items:["Greek yogurt (200g) with honey & granola","Handful of almonds","1 apple or orange"],macros:"~400 kcal · 24g P",icon:"🥜",note:"Keeps amino acids flowing between big meals"},
+    {name:"Lunch — The Builder",time:"1:00 PM",items:["250g grilled chicken thighs","Large portion of rice (200g dry)","Mixed salad with olive oil","Side of avocado"],macros:"~750 kcal · 52g P",icon:"🍗",note:"Biggest carb meal — refuels glycogen from morning session"},
+    {name:"Afternoon — Sustain",time:"4:00 PM",items:["200g lean ground beef patty in a wrap","1 banana or apple","Handful of mixed nuts"],macros:"~500 kcal · 34g P",icon:"🌯",note:"Bridges the gap to dinner, keeps protein synthesis active"},
+    {name:"Dinner — The Feast",time:"7:30 PM",items:["300g ribeye steak OR salmon fillet","Sweet potato (large, baked)","Steamed broccoli & green beans","Drizzle of olive oil"],macros:"~700 kcal · 48g P",icon:"🥩",note:"Quality protein + micronutrients for overnight recovery"},
+    {name:"Before Bed — Recovery",time:"9:00 PM",items:["Casein shake or cottage cheese (200g)","1 tbsp peanut butter","Handful of berries"],macros:"~300 kcal · 30g P",icon:"🌙",note:"Slow-digesting protein feeds muscles while you sleep"},
   ]
 };
 
-// ─── Helpers ───
 const getLevel = (xp) => { for (let i = XP_PER_LEVEL.length - 1; i >= 0; i--) { if (xp >= XP_PER_LEVEL[i]) return i; } return 0; };
 const getTitle = (level) => TITLES[Math.min(Math.floor(level / 2.5), TITLES.length - 1)];
 const calcXP = (weight, reps, sets, mult) => Math.round(weight * reps * sets * mult * 0.05);
 
-const DEFAULT_STATE = {
-  xp: 0, stats: {STR:1,END:1,VIT:1,PWR:1,AGI:1,FOR:1},
-  workoutLog: [], streakDays: 0, lastWorkout: null,
-  totalWorkouts: 0, totalWeightLifted: 0, bestDay: 0,
-  achievements: [], name: "Sofian",
-};
+const DEFAULT_STATE = { xp:0, stats:{STR:1,END:1,VIT:1,PWR:1,AGI:1,FOR:1}, workoutLog:[], streakDays:0, lastWorkout:null, totalWorkouts:0, totalWeightLifted:0, bestDay:0, achievements:[], name:"Sofian" };
 
 const ACHIEVEMENTS = [
   {id:"first",name:"First Rep",desc:"Complete your first workout",icon:"⚔️",check:s=>s.totalWorkouts>=1},
@@ -126,233 +177,152 @@ const ACHIEVEMENTS = [
   {id:"lvl25",name:"Elite",desc:"Reach level 25",icon:"👑",check:s=>getLevel(s.xp)>=25},
 ];
 
-// ─── Components ───
+// ─── Exercise Modal ───
+function ExerciseModal({exercise, onClose, onSwap}) {
+  const db = EXERCISE_DB[exercise.name] || {};
+  const iconSvg = EX_ICONS[db.icon||"barbell"]?.(db.color||"#f59e0b") || "";
+  const videoUrl = `https://www.youtube.com/results?search_query=${db.videoQuery||exercise.name.replace(/ /g,'+')}+form+tutorial`;
 
+  return (
+    <div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.85)",zIndex:200,display:"flex",alignItems:"flex-end",justifyContent:"center",animation:"fadeOverlay 0.2s ease"}}>
+      <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxWidth:480,maxHeight:"85vh",overflowY:"auto",background:"#13151a",borderRadius:"20px 20px 0 0",padding:"20px 16px 32px",animation:"slideUp 0.3s ease"}}>
+        <div style={{width:40,height:4,borderRadius:2,background:"#333",margin:"0 auto 16px"}}/>
+        
+        <div style={{display:"flex",gap:14,alignItems:"center",marginBottom:16}}>
+          <div style={{width:56,height:56,borderRadius:14,background:`${db.color||'#f59e0b'}15`,border:`1px solid ${db.color||'#f59e0b'}33`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}} dangerouslySetInnerHTML={{__html:iconSvg}}/>
+          <div>
+            <div style={{fontSize:16,fontWeight:800,color:"#fff"}}>{exercise.name}</div>
+            <div style={{fontSize:11,color:"#888",fontFamily:"'JetBrains Mono',monospace",marginTop:2}}>{exercise.muscle} · {exercise.sets}×{exercise.reps}</div>
+          </div>
+        </div>
+
+        {db.tip && (
+          <div style={{background:"#0d0f13",borderRadius:10,padding:12,marginBottom:14,borderLeft:`3px solid ${db.color||'#f59e0b'}`}}>
+            <div style={{fontSize:10,fontWeight:700,color:"#888",marginBottom:4}}>💡 FORM TIP</div>
+            <div style={{fontSize:12,color:"#ccc",lineHeight:1.5}}>{db.tip}</div>
+          </div>
+        )}
+
+        <a href={videoUrl} target="_blank" rel="noopener noreferrer" style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,width:"100%",padding:"14px",borderRadius:12,background:"linear-gradient(90deg, #dc2626, #ef4444)",color:"#fff",fontWeight:700,fontSize:14,textDecoration:"none",marginBottom:20,boxShadow:"0 4px 16px rgba(239,68,68,0.3)"}}>
+          <span style={{fontSize:20}}>▶</span> Watch Exercise Demo
+        </a>
+
+        {db.alts && db.alts.length > 0 && (
+          <div>
+            <div style={{fontSize:13,fontWeight:700,color:"#fff",marginBottom:10,display:"flex",alignItems:"center",gap:6}}>
+              <span>🔄</span> Machine busy? Try these:
+            </div>
+            {db.alts.map((alt, i) => {
+              const altIcon = EX_ICONS[alt.icon]?.(db.color||"#f59e0b") || "";
+              return (
+                <button key={i} onClick={()=>onSwap&&onSwap(alt.name)} style={{display:"flex",alignItems:"center",gap:12,width:"100%",padding:"12px",borderRadius:12,background:"#0d0f13",border:"1px solid #1f2229",marginBottom:6,cursor:"pointer",textAlign:"left"}}>
+                  <div style={{width:40,height:40,borderRadius:10,background:`${db.color||'#f59e0b'}10`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}} dangerouslySetInnerHTML={{__html:altIcon}}/>
+                  <div style={{flex:1}}>
+                    <div style={{fontSize:13,fontWeight:700,color:"#fff"}}>{alt.name}</div>
+                    <div style={{fontSize:10,color:"#888",marginTop:2}}>{alt.tip}</div>
+                  </div>
+                  <div style={{fontSize:9,color:"#f59e0b",fontFamily:"'JetBrains Mono',monospace",background:"#f59e0b15",padding:"3px 8px",borderRadius:6}}>SWAP</div>
+                </button>
+              );
+            })}
+          </div>
+        )}
+        <button onClick={onClose} style={{width:"100%",padding:"14px",borderRadius:12,border:"1px solid #2a2d35",background:"transparent",color:"#888",fontWeight:700,fontSize:14,cursor:"pointer",marginTop:12}}>Close</button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Shared Components ───
 function XPBar({xp}) {
-  const level = getLevel(xp);
-  const cur = XP_PER_LEVEL[level] || 0;
-  const next = XP_PER_LEVEL[level + 1] || XP_PER_LEVEL[XP_PER_LEVEL.length - 1];
-  const pct = ((xp - cur) / (next - cur)) * 100;
-  return (
-    <div style={{width:"100%"}}>
-      <div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"#8a8f98",marginBottom:4,fontFamily:"'JetBrains Mono',monospace"}}>
-        <span>LVL {level}</span>
-        <span>{xp - cur} / {next - cur} XP</span>
-      </div>
-      <div style={{width:"100%",height:10,background:"#1a1d24",borderRadius:5,overflow:"hidden",border:"1px solid #2a2d35"}}>
-        <div style={{width:`${Math.min(pct,100)}%`,height:"100%",background:"linear-gradient(90deg, #f59e0b, #ef4444, #ec4899)",borderRadius:5,transition:"width 0.8s cubic-bezier(.4,0,.2,1)",boxShadow:"0 0 12px rgba(245,158,11,0.4)"}}/>
-      </div>
-    </div>
-  );
+  const level = getLevel(xp), cur = XP_PER_LEVEL[level]||0, next = XP_PER_LEVEL[level+1]||XP_PER_LEVEL[XP_PER_LEVEL.length-1];
+  const pct = ((xp-cur)/(next-cur))*100;
+  return (<div style={{width:"100%"}}><div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"#8a8f98",marginBottom:4,fontFamily:"'JetBrains Mono',monospace"}}><span>LVL {level}</span><span>{xp-cur} / {next-cur} XP</span></div><div style={{width:"100%",height:10,background:"#1a1d24",borderRadius:5,overflow:"hidden",border:"1px solid #2a2d35"}}><div style={{width:`${Math.min(pct,100)}%`,height:"100%",background:"linear-gradient(90deg, #f59e0b, #ef4444, #ec4899)",borderRadius:5,transition:"width 0.8s cubic-bezier(.4,0,.2,1)",boxShadow:"0 0 12px rgba(245,158,11,0.4)"}}/></div></div>);
 }
-
 function StatHex({stat,value,max=50}) {
-  const pct = Math.min(value/max*100, 100);
-  return (
-    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
-      <span style={{width:32,fontSize:11,fontWeight:700,color:STAT_COLORS[stat],fontFamily:"'JetBrains Mono',monospace"}}>{stat}</span>
-      <div style={{flex:1,height:6,background:"#1a1d24",borderRadius:3,overflow:"hidden"}}>
-        <div style={{width:`${pct}%`,height:"100%",background:STAT_COLORS[stat],borderRadius:3,transition:"width 0.5s ease",boxShadow:`0 0 8px ${STAT_COLORS[stat]}44`}}/>
-      </div>
-      <span style={{width:24,textAlign:"right",fontSize:12,color:"#ccc",fontFamily:"'JetBrains Mono',monospace"}}>{value}</span>
-    </div>
-  );
+  const pct = Math.min(value/max*100,100);
+  return (<div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}><span style={{width:32,fontSize:11,fontWeight:700,color:STAT_COLORS[stat],fontFamily:"'JetBrains Mono',monospace"}}>{stat}</span><div style={{flex:1,height:6,background:"#1a1d24",borderRadius:3,overflow:"hidden"}}><div style={{width:`${pct}%`,height:"100%",background:STAT_COLORS[stat],borderRadius:3,transition:"width 0.5s ease",boxShadow:`0 0 8px ${STAT_COLORS[stat]}44`}}/></div><span style={{width:24,textAlign:"right",fontSize:12,color:"#ccc",fontFamily:"'JetBrains Mono',monospace"}}>{value}</span></div>);
 }
-
 function TabBar({active,setActive}) {
   const tabs = [{id:"profile",icon:"👤",label:"Profile"},{id:"workout",icon:"🏋️",label:"Train"},{id:"meals",icon:"🍖",label:"Meals"},{id:"log",icon:"📊",label:"Log"}];
-  return (
-    <div style={{display:"flex",position:"fixed",bottom:0,left:0,right:0,background:"linear-gradient(180deg, #0d0f13 0%, #0a0c10 100%)",borderTop:"1px solid #1f2229",zIndex:100,padding:"6px 0 env(safe-area-inset-bottom, 8px)"}}>
-      {tabs.map(t => (
-        <button key={t.id} onClick={()=>setActive(t.id)} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:2,background:"none",border:"none",cursor:"pointer",padding:"6px 0",color:active===t.id?"#f59e0b":"#555",transition:"all 0.2s",transform:active===t.id?"scale(1.05)":"scale(1)"}}>
-          <span style={{fontSize:20}}>{t.icon}</span>
-          <span style={{fontSize:10,fontWeight:600,letterSpacing:0.5,fontFamily:"'JetBrains Mono',monospace"}}>{t.label}</span>
-        </button>
-      ))}
-    </div>
-  );
+  return (<div style={{display:"flex",position:"fixed",bottom:0,left:0,right:0,background:"linear-gradient(180deg, #0d0f13 0%, #0a0c10 100%)",borderTop:"1px solid #1f2229",zIndex:100,padding:"6px 0 env(safe-area-inset-bottom, 8px)"}}>{tabs.map(t=>(<button key={t.id} onClick={()=>setActive(t.id)} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:2,background:"none",border:"none",cursor:"pointer",padding:"6px 0",color:active===t.id?"#f59e0b":"#555",transition:"all 0.2s",transform:active===t.id?"scale(1.05)":"scale(1)"}}><span style={{fontSize:20}}>{t.icon}</span><span style={{fontSize:10,fontWeight:600,letterSpacing:0.5,fontFamily:"'JetBrains Mono',monospace"}}>{t.label}</span></button>))}</div>);
 }
 
+// ─── Profile ───
 function ProfileTab({state}) {
-  const level = getLevel(state.xp);
-  const title = getTitle(level);
+  const level = getLevel(state.xp), title = getTitle(level);
   return (
     <div style={{padding:"20px 16px 100px"}}>
       <div style={{background:"linear-gradient(135deg, #13151a 0%, #1a1025 50%, #0f1318 100%)",borderRadius:16,padding:24,marginBottom:16,border:"1px solid #2a2040",position:"relative",overflow:"hidden"}}>
         <div style={{position:"absolute",top:0,right:0,width:200,height:200,background:"radial-gradient(circle, #f59e0b08 0%, transparent 70%)"}}/>
         <div style={{display:"flex",gap:16,alignItems:"center",marginBottom:20}}>
-          <div style={{width:72,height:72,borderRadius:16,background:"linear-gradient(135deg, #f59e0b, #ef4444)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:36,boxShadow:"0 4px 24px rgba(245,158,11,0.3)"}}>
-            {level < 10 ? "⚔️" : level < 25 ? "🛡️" : "👑"}
-          </div>
-          <div>
-            <div style={{fontSize:22,fontWeight:800,color:"#fff",letterSpacing:-0.5}}>{state.name}</div>
-            <div style={{fontSize:13,color:"#f59e0b",fontWeight:600,fontFamily:"'JetBrains Mono',monospace"}}>{title}</div>
-            <div style={{fontSize:11,color:"#666",marginTop:2,fontFamily:"'JetBrains Mono',monospace"}}>186cm · {level < 5 ? "67" : level < 15 ? "72" : "76"}kg target</div>
-          </div>
+          <div style={{width:72,height:72,borderRadius:16,background:"linear-gradient(135deg, #f59e0b, #ef4444)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:36,boxShadow:"0 4px 24px rgba(245,158,11,0.3)"}}>{level<10?"⚔️":level<25?"🛡️":"👑"}</div>
+          <div><div style={{fontSize:22,fontWeight:800,color:"#fff",letterSpacing:-0.5}}>{state.name}</div><div style={{fontSize:13,color:"#f59e0b",fontWeight:600,fontFamily:"'JetBrains Mono',monospace"}}>{title}</div><div style={{fontSize:11,color:"#666",marginTop:2,fontFamily:"'JetBrains Mono',monospace"}}>186cm · {level<5?"67":level<15?"72":"76"}kg target</div></div>
         </div>
         <XPBar xp={state.xp}/>
       </div>
-
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:16}}>
-        {[
-          {label:"Workouts",value:state.totalWorkouts,icon:"💪"},
-          {label:"Streak",value:`${state.streakDays}d`,icon:"🔥"},
-          {label:"Weight",value:`${(state.totalWeightLifted/1000).toFixed(1)}t`,icon:"🏋️"},
-        ].map(s => (
-          <div key={s.label} style={{background:"#13151a",borderRadius:12,padding:"14px 10px",textAlign:"center",border:"1px solid #1f2229"}}>
-            <div style={{fontSize:20,marginBottom:4}}>{s.icon}</div>
-            <div style={{fontSize:18,fontWeight:800,color:"#fff"}}>{s.value}</div>
-            <div style={{fontSize:10,color:"#666",fontFamily:"'JetBrains Mono',monospace",marginTop:2}}>{s.label}</div>
-          </div>
-        ))}
+        {[{label:"Workouts",value:state.totalWorkouts,icon:"💪"},{label:"Streak",value:`${state.streakDays}d`,icon:"🔥"},{label:"Weight",value:`${(state.totalWeightLifted/1000).toFixed(1)}t`,icon:"🏋️"}].map(s=>(<div key={s.label} style={{background:"#13151a",borderRadius:12,padding:"14px 10px",textAlign:"center",border:"1px solid #1f2229"}}><div style={{fontSize:20,marginBottom:4}}>{s.icon}</div><div style={{fontSize:18,fontWeight:800,color:"#fff"}}>{s.value}</div><div style={{fontSize:10,color:"#666",fontFamily:"'JetBrains Mono',monospace",marginTop:2}}>{s.label}</div></div>))}
       </div>
-
-      <div style={{background:"#13151a",borderRadius:14,padding:20,marginBottom:16,border:"1px solid #1f2229"}}>
-        <div style={{fontSize:14,fontWeight:700,color:"#fff",marginBottom:14,display:"flex",alignItems:"center",gap:8}}>
-          <span style={{fontSize:16}}>⚡</span> Attributes
-        </div>
-        {STATS.map(s => <StatHex key={s} stat={s} value={state.stats[s]}/>)}
-      </div>
-
-      <div style={{background:"#13151a",borderRadius:14,padding:20,border:"1px solid #1f2229"}}>
-        <div style={{fontSize:14,fontWeight:700,color:"#fff",marginBottom:14,display:"flex",alignItems:"center",gap:8}}>
-          <span style={{fontSize:16}}>🏆</span> Achievements
-        </div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-          {ACHIEVEMENTS.map(a => {
-            const unlocked = state.achievements.includes(a.id);
-            return (
-              <div key={a.id} style={{padding:"12px 10px",borderRadius:10,background:unlocked?"#1a1a10":"#0d0f13",border:`1px solid ${unlocked?"#f59e0b33":"#1a1d24"}`,opacity:unlocked?1:0.4,transition:"all 0.3s"}}>
-                <div style={{fontSize:22,marginBottom:4}}>{a.icon}</div>
-                <div style={{fontSize:11,fontWeight:700,color:unlocked?"#f59e0b":"#555"}}>{a.name}</div>
-                <div style={{fontSize:9,color:"#666",marginTop:2}}>{a.desc}</div>
-              </div>
-            );
-          })}
-        </div>
+      <div style={{background:"#13151a",borderRadius:14,padding:20,marginBottom:16,border:"1px solid #1f2229"}}><div style={{fontSize:14,fontWeight:700,color:"#fff",marginBottom:14,display:"flex",alignItems:"center",gap:8}}><span style={{fontSize:16}}>⚡</span> Attributes</div>{STATS.map(s=><StatHex key={s} stat={s} value={state.stats[s]}/>)}</div>
+      <div style={{background:"#13151a",borderRadius:14,padding:20,border:"1px solid #1f2229"}}><div style={{fontSize:14,fontWeight:700,color:"#fff",marginBottom:14,display:"flex",alignItems:"center",gap:8}}><span style={{fontSize:16}}>🏆</span> Achievements</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>{ACHIEVEMENTS.map(a=>{const u=state.achievements.includes(a.id);return(<div key={a.id} style={{padding:"12px 10px",borderRadius:10,background:u?"#1a1a10":"#0d0f13",border:`1px solid ${u?"#f59e0b33":"#1a1d24"}`,opacity:u?1:0.4}}><div style={{fontSize:22,marginBottom:4}}>{a.icon}</div><div style={{fontSize:11,fontWeight:700,color:u?"#f59e0b":"#555"}}>{a.name}</div><div style={{fontSize:9,color:"#666",marginTop:2}}>{a.desc}</div></div>);})}</div>
       </div>
     </div>
   );
 }
 
+// ─── Workout ───
 function WorkoutTab({state,setState}) {
   const days = Object.keys(PROGRAM);
   const [selectedDay, setSelectedDay] = useState(days[0]);
   const [weights, setWeights] = useState({});
   const [completed, setCompleted] = useState({});
   const [showResult, setShowResult] = useState(null);
+  const [modalExercise, setModalExercise] = useState(null);
+  const [swaps, setSwaps] = useState({});
 
-  const exercises = PROGRAM[selectedDay];
+  const exercises = PROGRAM[selectedDay].map((ex,i) => swaps[`${selectedDay}-${i}`] ? {...ex, name:swaps[`${selectedDay}-${i}`]} : ex);
 
-  const toggleSet = (exIdx, setIdx) => {
-    const key = `${exIdx}-${setIdx}`;
-    setCompleted(p => ({...p, [key]: !p[key]}));
-    // Haptic feedback
-    if (navigator.vibrate) navigator.vibrate(30);
-  };
+  const toggleSet = (ei,si) => { setCompleted(p=>({...p,[`${ei}-${si}`]:!p[`${ei}-${si}`]})); if(navigator.vibrate) navigator.vibrate(30); };
+  const handleSwap = (ei,alt) => { setSwaps(p=>({...p,[`${selectedDay}-${ei}`]:alt})); setModalExercise(null); };
 
   const finishWorkout = () => {
-    let totalXP = 0;
-    let totalWeight = 0;
-    let statGains = {STR:0,END:0,VIT:0,PWR:0,AGI:0,FOR:0};
-
-    exercises.forEach((ex, exIdx) => {
-      const w = parseFloat(weights[exIdx]) || 0;
-      let completedSets = 0;
-      for (let s = 0; s < ex.sets; s++) {
-        if (completed[`${exIdx}-${s}`]) completedSets++;
-      }
-      const reps = parseInt(ex.reps) || 10;
-      const xp = calcXP(w, reps, completedSets, ex.xpMult);
-      totalXP += xp;
-      totalWeight += w * reps * completedSets;
-
-      if (ex.muscle.includes("Chest") || ex.muscle.includes("Back") || ex.muscle.includes("Shoulders")) statGains.STR += Math.ceil(completedSets * 0.3);
-      if (ex.muscle.includes("Quad") || ex.muscle.includes("Ham") || ex.muscle.includes("Glute")) statGains.PWR += Math.ceil(completedSets * 0.3);
-      if (ex.muscle.includes("Core")) statGains.VIT += Math.ceil(completedSets * 0.2);
-      statGains.END += Math.ceil(completedSets * 0.1);
-      statGains.FOR += Math.ceil(completedSets * 0.1);
-      if (ex.muscle.includes("Arms") || ex.muscle.includes("Bic") || ex.muscle.includes("Tri")) statGains.AGI += Math.ceil(completedSets * 0.2);
-    });
-
-    const bonusXP = Math.round(totalXP * 0.1);
-    totalXP += bonusXP;
-
-    const newState = {...state};
-    newState.xp += totalXP;
-    newState.totalWorkouts += 1;
-    newState.totalWeightLifted += totalWeight;
-    if (totalXP > newState.bestDay) newState.bestDay = totalXP;
-    
-    const today = new Date().toDateString();
-    const lastDate = newState.lastWorkout ? new Date(newState.lastWorkout).toDateString() : null;
-    const yesterday = new Date(Date.now() - 86400000).toDateString();
-    if (lastDate === yesterday || lastDate === today) {
-      if (lastDate !== today) newState.streakDays += 1;
-    } else {
-      newState.streakDays = 1;
-    }
-    newState.lastWorkout = new Date().toISOString();
-
-    Object.keys(statGains).forEach(s => {
-      newState.stats[s] = Math.min(50, (newState.stats[s] || 1) + statGains[s]);
-    });
-
-    ACHIEVEMENTS.forEach(a => {
-      if (!newState.achievements.includes(a.id) && a.check(newState)) {
-        newState.achievements.push(a.id);
-      }
-    });
-
-    newState.workoutLog = [...(newState.workoutLog || []), {
-      date: new Date().toISOString(), day: selectedDay, xp: totalXP, weight: totalWeight,
-    }].slice(-50);
-
-    setState(newState);
-    setShowResult({xp:totalXP, bonus:bonusXP, stats:statGains, weight:totalWeight, prevLevel:getLevel(state.xp), newLevel:getLevel(newState.xp)});
-    setCompleted({});
-    if (navigator.vibrate) navigator.vibrate([50, 50, 100]);
+    let totalXP=0,totalWeight=0,sg={STR:0,END:0,VIT:0,PWR:0,AGI:0,FOR:0};
+    exercises.forEach((ex,ei)=>{const w=parseFloat(weights[ei])||0;let cs=0;for(let s=0;s<ex.sets;s++){if(completed[`${ei}-${s}`])cs++;}const r=parseInt(ex.reps)||10;const xp=calcXP(w,r,cs,ex.xpMult);totalXP+=xp;totalWeight+=w*r*cs;
+      if(ex.muscle.includes("Chest")||ex.muscle.includes("Back")||ex.muscle.includes("Shoulders"))sg.STR+=Math.ceil(cs*0.3);
+      if(ex.muscle.includes("Quad")||ex.muscle.includes("Ham")||ex.muscle.includes("Glute"))sg.PWR+=Math.ceil(cs*0.3);
+      if(ex.muscle.includes("Core"))sg.VIT+=Math.ceil(cs*0.2);sg.END+=Math.ceil(cs*0.1);sg.FOR+=Math.ceil(cs*0.1);
+      if(ex.muscle.includes("Arms")||ex.muscle.includes("Bic")||ex.muscle.includes("Tri"))sg.AGI+=Math.ceil(cs*0.2);});
+    const bonus=Math.round(totalXP*0.1);totalXP+=bonus;
+    const ns={...state};ns.xp+=totalXP;ns.totalWorkouts+=1;ns.totalWeightLifted+=totalWeight;if(totalXP>ns.bestDay)ns.bestDay=totalXP;
+    const today=new Date().toDateString(),last=ns.lastWorkout?new Date(ns.lastWorkout).toDateString():null,yest=new Date(Date.now()-86400000).toDateString();
+    if(last===yest||last===today){if(last!==today)ns.streakDays+=1;}else{ns.streakDays=1;}
+    ns.lastWorkout=new Date().toISOString();
+    Object.keys(sg).forEach(s=>{ns.stats[s]=Math.min(50,(ns.stats[s]||1)+sg[s]);});
+    ACHIEVEMENTS.forEach(a=>{if(!ns.achievements.includes(a.id)&&a.check(ns))ns.achievements.push(a.id);});
+    ns.workoutLog=[...(ns.workoutLog||[]),{date:new Date().toISOString(),day:selectedDay,xp:totalXP,weight:totalWeight}].slice(-50);
+    setState(ns);setShowResult({xp:totalXP,bonus,stats:sg,weight:totalWeight,prevLevel:getLevel(state.xp),newLevel:getLevel(ns.xp)});setCompleted({});
+    if(navigator.vibrate)navigator.vibrate([50,50,100]);
   };
 
   if (showResult) {
-    const leveledUp = showResult.newLevel > showResult.prevLevel;
+    const lu=showResult.newLevel>showResult.prevLevel;
     return (
       <div style={{padding:"40px 16px 100px",textAlign:"center"}}>
         <div style={{background:"linear-gradient(135deg, #1a1025, #13151a)",borderRadius:20,padding:32,border:"1px solid #2a2040",animation:"fadeIn 0.5s ease"}}>
-          <div style={{fontSize:48,marginBottom:8,animation:leveledUp?"levelUp 0.6s ease":"none"}}>{leveledUp ? "🎉" : "⚔️"}</div>
-          <div style={{fontSize:24,fontWeight:800,color:"#fff",marginBottom:4}}>
-            {leveledUp ? "LEVEL UP!" : "Workout Complete!"}
-          </div>
-          {leveledUp && <div style={{fontSize:16,color:"#f59e0b",fontWeight:700,marginBottom:12}}>Level {showResult.newLevel} — {getTitle(showResult.newLevel)}</div>}
-          
-          <div style={{display:"inline-block",padding:"8px 24px",borderRadius:20,background:"linear-gradient(90deg, #f59e0b22, #ef444422)",border:"1px solid #f59e0b44",marginBottom:20}}>
-            <span style={{fontSize:28,fontWeight:800,color:"#f59e0b",fontFamily:"'JetBrains Mono',monospace"}}>+{showResult.xp} XP</span>
-          </div>
-
+          <div style={{fontSize:48,marginBottom:8,animation:lu?"levelUp 0.6s ease":"none"}}>{lu?"🎉":"⚔️"}</div>
+          <div style={{fontSize:24,fontWeight:800,color:"#fff",marginBottom:4}}>{lu?"LEVEL UP!":"Workout Complete!"}</div>
+          {lu&&<div style={{fontSize:16,color:"#f59e0b",fontWeight:700,marginBottom:12}}>Level {showResult.newLevel} — {getTitle(showResult.newLevel)}</div>}
+          <div style={{display:"inline-block",padding:"8px 24px",borderRadius:20,background:"linear-gradient(90deg, #f59e0b22, #ef444422)",border:"1px solid #f59e0b44",marginBottom:20}}><span style={{fontSize:28,fontWeight:800,color:"#f59e0b",fontFamily:"'JetBrains Mono',monospace"}}>+{showResult.xp} XP</span></div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:20}}>
-            <div style={{background:"#0d0f13",borderRadius:10,padding:12}}>
-              <div style={{fontSize:10,color:"#666"}}>Weight Moved</div>
-              <div style={{fontSize:16,fontWeight:700,color:"#fff"}}>{showResult.weight.toLocaleString()} kg</div>
-            </div>
-            <div style={{background:"#0d0f13",borderRadius:10,padding:12}}>
-              <div style={{fontSize:10,color:"#666"}}>Bonus XP</div>
-              <div style={{fontSize:16,fontWeight:700,color:"#4dff91"}}>+{showResult.bonus}</div>
-            </div>
+            <div style={{background:"#0d0f13",borderRadius:10,padding:12}}><div style={{fontSize:10,color:"#666"}}>Weight Moved</div><div style={{fontSize:16,fontWeight:700,color:"#fff"}}>{showResult.weight.toLocaleString()} kg</div></div>
+            <div style={{background:"#0d0f13",borderRadius:10,padding:12}}><div style={{fontSize:10,color:"#666"}}>Bonus XP</div><div style={{fontSize:16,fontWeight:700,color:"#4dff91"}}>+{showResult.bonus}</div></div>
           </div>
-
-          <div style={{textAlign:"left",marginBottom:20}}>
-            <div style={{fontSize:12,fontWeight:600,color:"#888",marginBottom:8}}>STAT GAINS</div>
-            {Object.entries(showResult.stats).filter(([,v])=>v>0).map(([s,v]) => (
-              <div key={s} style={{display:"flex",justifyContent:"space-between",marginBottom:4,padding:"4px 8px",borderRadius:6,background:"#0d0f13"}}>
-                <span style={{fontSize:12,color:STAT_COLORS[s],fontWeight:700}}>{STAT_NAMES[s]}</span>
-                <span style={{fontSize:12,color:"#4dff91",fontWeight:700}}>+{v}</span>
-              </div>
-            ))}
+          <div style={{textAlign:"left",marginBottom:20}}><div style={{fontSize:12,fontWeight:600,color:"#888",marginBottom:8}}>STAT GAINS</div>
+            {Object.entries(showResult.stats).filter(([,v])=>v>0).map(([s,v])=>(<div key={s} style={{display:"flex",justifyContent:"space-between",marginBottom:4,padding:"4px 8px",borderRadius:6,background:"#0d0f13"}}><span style={{fontSize:12,color:STAT_COLORS[s],fontWeight:700}}>{STAT_NAMES[s]}</span><span style={{fontSize:12,color:"#4dff91",fontWeight:700}}>+{v}</span></div>))}
           </div>
-
-          <button onClick={()=>setShowResult(null)} style={{width:"100%",padding:"14px",borderRadius:12,border:"none",background:"linear-gradient(90deg, #f59e0b, #ef4444)",color:"#fff",fontWeight:800,fontSize:15,cursor:"pointer",letterSpacing:0.5}}>
-            CONTINUE
-          </button>
+          <button onClick={()=>setShowResult(null)} style={{width:"100%",padding:"14px",borderRadius:12,border:"none",background:"linear-gradient(90deg, #f59e0b, #ef4444)",color:"#fff",fontWeight:800,fontSize:15,cursor:"pointer"}}>CONTINUE</button>
         </div>
       </div>
     );
@@ -361,100 +331,77 @@ function WorkoutTab({state,setState}) {
   return (
     <div style={{padding:"16px 16px 100px"}}>
       <div style={{fontSize:18,fontWeight:800,color:"#fff",marginBottom:12}}>🏋️ Training</div>
-      
       <div style={{display:"flex",gap:6,marginBottom:16,overflowX:"auto",paddingBottom:4}}>
-        {days.map((d,i) => (
-          <button key={d} onClick={()=>{setSelectedDay(d);setCompleted({});}} style={{padding:"8px 14px",borderRadius:10,border:"none",cursor:"pointer",whiteSpace:"nowrap",background:selectedDay===d?"linear-gradient(90deg,#f59e0b,#ef4444)":"#13151a",color:selectedDay===d?"#fff":"#888",fontWeight:700,fontSize:11,fontFamily:"'JetBrains Mono',monospace"}}>
-            D{i+1}
-          </button>
-        ))}
+        {days.map((d,i)=>(<button key={d} onClick={()=>{setSelectedDay(d);setCompleted({});}} style={{padding:"8px 14px",borderRadius:10,border:"none",cursor:"pointer",whiteSpace:"nowrap",background:selectedDay===d?"linear-gradient(90deg,#f59e0b,#ef4444)":"#13151a",color:selectedDay===d?"#fff":"#888",fontWeight:700,fontSize:11,fontFamily:"'JetBrains Mono',monospace"}}>D{i+1}</button>))}
       </div>
+      <div style={{fontSize:14,fontWeight:700,color:"#f59e0b",marginBottom:6}}>{selectedDay}</div>
+      <div style={{fontSize:10,color:"#666",marginBottom:14,fontFamily:"'JetBrains Mono',monospace"}}>Tap exercise icon for demo & alternatives</div>
 
-      <div style={{fontSize:14,fontWeight:700,color:"#f59e0b",marginBottom:14}}>{selectedDay}</div>
-
-      {exercises.map((ex, exIdx) => (
-        <div key={exIdx} style={{background:"#13151a",borderRadius:14,padding:16,marginBottom:10,border:"1px solid #1f2229"}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-            <div>
-              <div style={{fontSize:13,fontWeight:700,color:"#fff"}}>{ex.name}</div>
-              <div style={{fontSize:10,color:"#666",fontFamily:"'JetBrains Mono',monospace"}}>{ex.muscle} · {ex.sets}×{ex.reps}</div>
+      {exercises.map((ex,ei)=>{
+        const db=EXERCISE_DB[ex.name]||{};const iconSvg=EX_ICONS[db.icon||"barbell"]?.(db.color||"#f59e0b")||"";const swapped=!!swaps[`${selectedDay}-${ei}`];
+        return (
+          <div key={ei} style={{background:"#13151a",borderRadius:14,padding:14,marginBottom:10,border:`1px solid ${swapped?"#f59e0b33":"#1f2229"}`}}>
+            <div style={{display:"flex",gap:10,alignItems:"center",marginBottom:10}}>
+              <button onClick={()=>setModalExercise({...ex,_idx:ei})} style={{width:48,height:48,borderRadius:12,background:`${db.color||'#f59e0b'}12`,border:`1px solid ${db.color||'#f59e0b'}30`,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",flexShrink:0}} dangerouslySetInnerHTML={{__html:iconSvg}}/>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+                  <div><div style={{fontSize:13,fontWeight:700,color:"#fff",lineHeight:1.3}}>{ex.name}</div><div style={{fontSize:10,color:"#666",fontFamily:"'JetBrains Mono',monospace"}}>{ex.muscle} · {ex.sets}×{ex.reps}</div></div>
+                  <div style={{fontSize:9,color:"#f59e0b",fontFamily:"'JetBrains Mono',monospace",background:"#f59e0b15",padding:"3px 8px",borderRadius:6,flexShrink:0}}>×{ex.xpMult}</div>
+                </div>
+              </div>
             </div>
-            <div style={{fontSize:9,color:"#f59e0b",fontFamily:"'JetBrains Mono',monospace",background:"#f59e0b15",padding:"3px 8px",borderRadius:6}}>×{ex.xpMult} XP</div>
-          </div>
-          
-          <div style={{display:"flex",alignItems:"center",gap:8}}>
-            <input
-              type="number"
-              inputMode="decimal"
-              placeholder="kg"
-              value={weights[exIdx] || ""}
-              onChange={e => setWeights(p=>({...p,[exIdx]:e.target.value}))}
-              style={{width:64,padding:"8px 10px",borderRadius:8,border:"1px solid #2a2d35",background:"#0d0f13",color:"#fff",fontSize:14,fontWeight:700,fontFamily:"'JetBrains Mono',monospace",outline:"none"}}
-            />
-            <div style={{display:"flex",gap:4,flex:1,justifyContent:"flex-end"}}>
-              {Array.from({length:ex.sets}).map((_,sIdx) => {
-                const done = completed[`${exIdx}-${sIdx}`];
-                return (
-                  <button key={sIdx} onClick={()=>toggleSet(exIdx,sIdx)} style={{width:36,height:36,borderRadius:8,border:"none",cursor:"pointer",background:done?"linear-gradient(135deg,#f59e0b,#ef4444)":"#0d0f13",color:done?"#fff":"#444",fontWeight:800,fontSize:12,transition:"all 0.2s",transform:done?"scale(1.05)":"scale(1)",boxShadow:done?"0 2px 8px rgba(245,158,11,0.3)":"none"}}>
-                    {done ? "✓" : sIdx+1}
-                  </button>
-                );
-              })}
+            {swapped&&<div style={{fontSize:9,color:"#f59e0b",marginBottom:6,fontFamily:"'JetBrains Mono',monospace"}}>🔄 Swapped</div>}
+            <div style={{display:"flex",alignItems:"center",gap:8}}>
+              <input type="number" inputMode="decimal" placeholder="kg" value={weights[ei]||""} onChange={e=>setWeights(p=>({...p,[ei]:e.target.value}))} style={{width:64,padding:"8px 10px",borderRadius:8,border:"1px solid #2a2d35",background:"#0d0f13",color:"#fff",fontSize:14,fontWeight:700,fontFamily:"'JetBrains Mono',monospace",outline:"none"}}/>
+              <div style={{display:"flex",gap:4,flex:1,justifyContent:"flex-end"}}>
+                {Array.from({length:ex.sets}).map((_,si)=>{const done=completed[`${ei}-${si}`];return(<button key={si} onClick={()=>toggleSet(ei,si)} style={{width:36,height:36,borderRadius:8,border:"none",cursor:"pointer",background:done?"linear-gradient(135deg,#f59e0b,#ef4444)":"#0d0f13",color:done?"#fff":"#444",fontWeight:800,fontSize:12,transition:"all 0.2s",transform:done?"scale(1.05)":"scale(1)",boxShadow:done?"0 2px 8px rgba(245,158,11,0.3)":"none"}}>{done?"✓":si+1}</button>);})}
+              </div>
             </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
 
-      <button onClick={finishWorkout} style={{width:"100%",padding:"16px",borderRadius:14,border:"none",marginTop:8,background:"linear-gradient(90deg, #f59e0b, #ef4444, #ec4899)",color:"#fff",fontWeight:800,fontSize:16,cursor:"pointer",letterSpacing:1,boxShadow:"0 4px 24px rgba(245,158,11,0.3)"}}>
-        ⚡ FINISH & GAIN XP
-      </button>
+      <button onClick={finishWorkout} style={{width:"100%",padding:"16px",borderRadius:14,border:"none",marginTop:8,background:"linear-gradient(90deg, #f59e0b, #ef4444, #ec4899)",color:"#fff",fontWeight:800,fontSize:16,cursor:"pointer",letterSpacing:1,boxShadow:"0 4px 24px rgba(245,158,11,0.3)"}}>⚡ FINISH & GAIN XP</button>
+      {modalExercise && <ExerciseModal exercise={modalExercise} onClose={()=>setModalExercise(null)} onSwap={(alt)=>handleSwap(modalExercise._idx,alt)}/>}
     </div>
   );
 }
 
+// ─── Meals ───
 function MealsTab() {
   const [expanded, setExpanded] = useState(null);
   return (
     <div style={{padding:"16px 16px 100px"}}>
       <div style={{fontSize:18,fontWeight:800,color:"#fff",marginBottom:4}}>🍖 Meal Plan</div>
-      <div style={{fontSize:11,color:"#f59e0b",marginBottom:4,fontFamily:"'JetBrains Mono',monospace"}}>Bulk Mode — High Protein Carnivore</div>
-      <div style={{fontSize:10,color:"#666",marginBottom:16,fontFamily:"'JetBrains Mono',monospace"}}>{MEAL_PLAN.target}</div>
-
-      {MEAL_PLAN.meals.map((meal, i) => (
+      <div style={{fontSize:11,color:"#f59e0b",marginBottom:2,fontFamily:"'JetBrains Mono',monospace"}}>Early Bird Bulk — 5:30 AM Warrior</div>
+      <div style={{fontSize:10,color:"#666",marginBottom:14,fontFamily:"'JetBrains Mono',monospace"}}>{MEAL_PLAN.target}</div>
+      <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:14,padding:"8px 12px",background:"#13151a",borderRadius:10,border:"1px solid #1f2229"}}>
+        <span style={{fontSize:14}}>⏰</span>
+        <span style={{fontSize:11,color:"#ccc"}}>Timed for <strong style={{color:"#f59e0b"}}>5:30 AM training</strong></span>
+      </div>
+      {MEAL_PLAN.meals.map((meal,i)=>(
         <div key={i} onClick={()=>setExpanded(expanded===i?null:i)} style={{background:"#13151a",borderRadius:14,padding:16,marginBottom:8,border:`1px solid ${expanded===i?"#f59e0b33":"#1f2229"}`,cursor:"pointer",transition:"all 0.2s"}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
             <div style={{display:"flex",alignItems:"center",gap:10}}>
               <span style={{fontSize:24}}>{meal.icon}</span>
-              <div>
-                <div style={{fontSize:13,fontWeight:700,color:"#fff"}}>{meal.name}</div>
-                <div style={{fontSize:10,color:"#666",fontFamily:"'JetBrains Mono',monospace"}}>{meal.time}</div>
-              </div>
+              <div><div style={{fontSize:13,fontWeight:700,color:"#fff"}}>{meal.name}</div><div style={{fontSize:10,color:"#666",fontFamily:"'JetBrains Mono',monospace"}}>{meal.time}</div></div>
             </div>
-            <div style={{fontSize:10,color:"#f59e0b",fontFamily:"'JetBrains Mono',monospace"}}>{meal.macros}</div>
+            <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end"}}>
+              <div style={{fontSize:10,color:"#f59e0b",fontFamily:"'JetBrains Mono',monospace"}}>{meal.macros}</div>
+              <div style={{fontSize:14,color:"#555",transition:"transform 0.2s",transform:expanded===i?"rotate(180deg)":"rotate(0)"}}>▾</div>
+            </div>
           </div>
-          {expanded === i && (
+          {expanded===i && (
             <div style={{marginTop:12,paddingTop:12,borderTop:"1px solid #1f2229"}}>
-              {meal.items.map((item, j) => (
-                <div key={j} style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
-                  <div style={{width:4,height:4,borderRadius:2,background:"#f59e0b"}}/>
-                  <span style={{fontSize:12,color:"#ccc"}}>{item}</span>
-                </div>
-              ))}
+              {meal.note&&<div style={{fontSize:11,color:"#f59e0b",marginBottom:10,padding:"6px 10px",background:"#f59e0b08",borderRadius:8,borderLeft:"2px solid #f59e0b33"}}>{meal.note}</div>}
+              {meal.items.map((item,j)=>(<div key={j} style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}><div style={{width:4,height:4,borderRadius:2,background:"#f59e0b"}}/><span style={{fontSize:12,color:"#ccc"}}>{item}</span></div>))}
             </div>
           )}
         </div>
       ))}
-
       <div style={{background:"#13151a",borderRadius:14,padding:16,marginTop:8,border:"1px solid #1f2229"}}>
-        <div style={{fontSize:12,fontWeight:700,color:"#fff",marginBottom:8}}>💡 Bulking Tips</div>
-        {[
-          "Eat within 1hr of waking to kickstart muscle synthesis",
-          "Post-workout meal within 45 min — protein + fast carbs",
-          "Track weekly weight — aim for 0.3-0.5kg/week gain",
-          "If weight stalls, add 200 kcal (extra rice or peanut butter)",
-          "Hydrate: 3-4 liters/day minimum",
-          "Creatine monohydrate 5g daily is evidence-backed",
-        ].map((tip,i) => (
+        <div style={{fontSize:12,fontWeight:700,color:"#fff",marginBottom:8}}>💡 Early Bird Bulking Tips</div>
+        {["Pre-workout: eat 20-30 min before — banana + PB is enough","Post-workout within 45 min is critical for AM trainers","Track weekly weight — aim for 0.3-0.5 kg/week gain","If weight stalls, add 200 kcal (extra rice or peanut butter)","Sleep by 9:30-10 PM — you need 7-8hrs for 5 AM wake-ups","Hydrate: 3-4 liters/day, start with 500ml on waking","Creatine monohydrate 5g daily — any time, be consistent","Prep meals the night before to stay on track"].map((tip,i)=>(
           <div key={i} style={{fontSize:11,color:"#999",marginBottom:6,paddingLeft:12,borderLeft:"2px solid #f59e0b33"}}>{tip}</div>
         ))}
       </div>
@@ -462,103 +409,53 @@ function MealsTab() {
   );
 }
 
+// ─── Log ───
 function LogTab({state}) {
-  const logs = [...(state.workoutLog || [])].reverse();
+  const logs=[...(state.workoutLog||[])].reverse();
   return (
     <div style={{padding:"16px 16px 100px"}}>
       <div style={{fontSize:18,fontWeight:800,color:"#fff",marginBottom:16}}>📊 Progress</div>
-      
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:16}}>
-        <div style={{background:"#13151a",borderRadius:12,padding:14,border:"1px solid #1f2229"}}>
-          <div style={{fontSize:10,color:"#666",fontFamily:"'JetBrains Mono',monospace"}}>Total XP</div>
-          <div style={{fontSize:20,fontWeight:800,color:"#f59e0b"}}>{state.xp.toLocaleString()}</div>
-        </div>
-        <div style={{background:"#13151a",borderRadius:12,padding:14,border:"1px solid #1f2229"}}>
-          <div style={{fontSize:10,color:"#666",fontFamily:"'JetBrains Mono',monospace"}}>Best Session</div>
-          <div style={{fontSize:20,fontWeight:800,color:"#4dff91"}}>{state.bestDay} XP</div>
-        </div>
+        <div style={{background:"#13151a",borderRadius:12,padding:14,border:"1px solid #1f2229"}}><div style={{fontSize:10,color:"#666",fontFamily:"'JetBrains Mono',monospace"}}>Total XP</div><div style={{fontSize:20,fontWeight:800,color:"#f59e0b"}}>{state.xp.toLocaleString()}</div></div>
+        <div style={{background:"#13151a",borderRadius:12,padding:14,border:"1px solid #1f2229"}}><div style={{fontSize:10,color:"#666",fontFamily:"'JetBrains Mono',monospace"}}>Best Session</div><div style={{fontSize:20,fontWeight:800,color:"#4dff91"}}>{state.bestDay} XP</div></div>
       </div>
-
       <div style={{background:"#13151a",borderRadius:14,padding:16,marginBottom:16,border:"1px solid #1f2229"}}>
         <div style={{fontSize:12,fontWeight:700,color:"#fff",marginBottom:12}}>Level Progress</div>
         <div style={{display:"flex",gap:2,height:40,alignItems:"flex-end"}}>
-          {logs.slice(0,20).reverse().map((l,i) => {
-            const maxXP = Math.max(...logs.map(x=>x.xp), 1);
-            const h = Math.max((l.xp / maxXP) * 100, 8);
-            return (
-              <div key={i} style={{flex:1,height:`${h}%`,borderRadius:3,background:"linear-gradient(180deg, #f59e0b, #ef4444)",opacity:0.5 + (i/20)*0.5,minWidth:4}}/>
-            );
+          {logs.slice(0,20).reverse().map((l,i)=>{const mx=Math.max(...logs.map(x=>x.xp),1);return<div key={i} style={{flex:1,height:`${Math.max((l.xp/mx)*100,8)}%`,borderRadius:3,background:"linear-gradient(180deg, #f59e0b, #ef4444)",opacity:0.5+(i/20)*0.5,minWidth:4}}/>;
           })}
-          {logs.length === 0 && <div style={{fontSize:11,color:"#444",padding:8}}>Complete workouts to see your progress chart</div>}
+          {logs.length===0&&<div style={{fontSize:11,color:"#444",padding:8}}>Complete workouts to see your chart</div>}
         </div>
       </div>
-
       <div style={{fontSize:13,fontWeight:700,color:"#fff",marginBottom:10}}>Recent Sessions</div>
-      {logs.length === 0 && <div style={{color:"#444",fontSize:12,textAlign:"center",padding:32}}>No workouts logged yet — go train!</div>}
-      {logs.map((log,i) => (
-        <div key={i} style={{background:"#13151a",borderRadius:12,padding:14,marginBottom:6,border:"1px solid #1f2229",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-          <div>
-            <div style={{fontSize:12,fontWeight:600,color:"#ccc"}}>{log.day}</div>
-            <div style={{fontSize:10,color:"#555",fontFamily:"'JetBrains Mono',monospace"}}>{new Date(log.date).toLocaleDateString()}</div>
-          </div>
-          <div style={{textAlign:"right"}}>
-            <div style={{fontSize:14,fontWeight:800,color:"#f59e0b"}}>+{log.xp} XP</div>
-            <div style={{fontSize:10,color:"#555",fontFamily:"'JetBrains Mono',monospace"}}>{log.weight.toLocaleString()} kg</div>
-          </div>
-        </div>
-      ))}
+      {logs.length===0&&<div style={{color:"#444",fontSize:12,textAlign:"center",padding:32}}>No workouts yet — go train!</div>}
+      {logs.map((log,i)=>(<div key={i} style={{background:"#13151a",borderRadius:12,padding:14,marginBottom:6,border:"1px solid #1f2229",display:"flex",justifyContent:"space-between",alignItems:"center"}}><div><div style={{fontSize:12,fontWeight:600,color:"#ccc"}}>{log.day}</div><div style={{fontSize:10,color:"#555",fontFamily:"'JetBrains Mono',monospace"}}>{new Date(log.date).toLocaleDateString()}</div></div><div style={{textAlign:"right"}}><div style={{fontSize:14,fontWeight:800,color:"#f59e0b"}}>+{log.xp} XP</div><div style={{fontSize:10,color:"#555",fontFamily:"'JetBrains Mono',monospace"}}>{log.weight.toLocaleString()} kg</div></div></div>))}
     </div>
   );
 }
 
-// ─── Main App ───
+// ─── Main ───
 function GymLevels() {
-  const [state, setState] = useState(() => LS.get("gym-levels-state") || {...DEFAULT_STATE});
+  const [state, setState] = useState(()=>LS.get("gym-levels-state")||{...DEFAULT_STATE});
   const [tab, setTab] = useState("profile");
-
-  const save = useCallback((newState) => {
-    setState(newState);
-    LS.set("gym-levels-state", newState);
-  }, []);
-
+  const save = useCallback((ns)=>{setState(ns);LS.set("gym-levels-state",ns);},[]);
   return (
     <div style={{minHeight:"100vh",background:"#0a0c10",color:"#fff",fontFamily:"'DM Sans','Segoe UI',sans-serif",maxWidth:480,margin:"0 auto",position:"relative"}}>
-      {/* Header */}
       <div style={{padding:"14px 16px",display:"flex",justifyContent:"space-between",alignItems:"center",borderBottom:"1px solid #1a1d24",position:"sticky",top:0,background:"#0a0c10ee",backdropFilter:"blur(12px)",zIndex:50}}>
-        <div style={{display:"flex",alignItems:"center",gap:8}}>
-          <span style={{fontSize:22}}>⚔️</span>
-          <span style={{fontSize:16,fontWeight:800,letterSpacing:-0.5,background:"linear-gradient(90deg,#f59e0b,#ef4444)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>GYM LEVELS</span>
-        </div>
-        <div style={{display:"flex",alignItems:"center",gap:6}}>
-          <span style={{fontSize:12,fontWeight:700,color:"#f59e0b",fontFamily:"'JetBrains Mono',monospace"}}>LVL {getLevel(state.xp)}</span>
-          <span style={{fontSize:11,color:"#555"}}>·</span>
-          <span style={{fontSize:12,color:"#888",fontFamily:"'JetBrains Mono',monospace"}}>{state.xp.toLocaleString()} XP</span>
-        </div>
+        <div style={{display:"flex",alignItems:"center",gap:8}}><span style={{fontSize:22}}>⚔️</span><span style={{fontSize:16,fontWeight:800,letterSpacing:-0.5,background:"linear-gradient(90deg,#f59e0b,#ef4444)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>GYM LEVELS</span></div>
+        <div style={{display:"flex",alignItems:"center",gap:6}}><span style={{fontSize:12,fontWeight:700,color:"#f59e0b",fontFamily:"'JetBrains Mono',monospace"}}>LVL {getLevel(state.xp)}</span><span style={{fontSize:11,color:"#555"}}>·</span><span style={{fontSize:12,color:"#888",fontFamily:"'JetBrains Mono',monospace"}}>{state.xp.toLocaleString()} XP</span></div>
       </div>
-
-      {tab === "profile" && <ProfileTab state={state}/>}
-      {tab === "workout" && <WorkoutTab state={state} setState={save}/>}
-      {tab === "meals" && <MealsTab/>}
-      {tab === "log" && <LogTab state={state}/>}
-
+      {tab==="profile"&&<ProfileTab state={state}/>}
+      {tab==="workout"&&<WorkoutTab state={state} setState={save}/>}
+      {tab==="meals"&&<MealsTab/>}
+      {tab==="log"&&<LogTab state={state}/>}
       <TabBar active={tab} setActive={setTab}/>
     </div>
   );
 }
 
-const root = ReactDOM.createRoot(document.getElementById('root'));
-root.render(<GymLevels/>);
+ReactDOM.createRoot(document.getElementById('root')).render(<GymLevels/>);
 </script>
-
-<script>
-// Register Service Worker
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('sw.js')
-      .then(r => console.log('SW registered:', r.scope))
-      .catch(e => console.log('SW failed:', e));
-  });
-}
-</script>
+<script>if('serviceWorker' in navigator){window.addEventListener('load',()=>{navigator.serviceWorker.register('sw.js').then(r=>console.log('SW:',r.scope)).catch(console.log);});}</script>
 </body>
 </html>
